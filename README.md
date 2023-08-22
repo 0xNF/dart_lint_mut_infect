@@ -28,6 +28,11 @@ function setSomethingMut() {
 This way you can establish a chain of all functions that mutate variables.
 
 
+# Exceptions
+
+Any function or method marked `@override`, or any function named `main` will not be flagged.  
+This means you wont be overloaded with warnings when dealing with names you don't control.
+
 # Debugging
 To debug,
 
