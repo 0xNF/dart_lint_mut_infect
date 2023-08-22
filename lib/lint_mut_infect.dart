@@ -2,16 +2,13 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
-import 'package:analyzer/diagnostic/diagnostic.dart';
 import 'package:analyzer/error/error.dart';
 import 'package:analyzer/error/listener.dart';
-import 'package:analyzer/source/source_range.dart';
 import 'package:custom_lint_builder/custom_lint_builder.dart';
 
 PluginBase createPlugin() => _ExampleLinter();
 
 const String _mutKeyword = "Mut";
-const String _buildKeyword = "build";
 
 bool _nameIsMut(Token? t) {
   final tval = t?.lexeme;
@@ -46,12 +43,12 @@ class MutInfectLintCode extends DartLintRule {
     errorSeverity: ErrorSeverity.WARNING,
   );
 
-  static const _outOfScopeModify = LintCode(
-    name: 'mut_out_of_scope',
-    problemMessage: 'An out of scope variable is mutated but method is not marked `Mut`',
-    correctionMessage: 'Add `Mut` to end of method name',
-    errorSeverity: ErrorSeverity.WARNING,
-  );
+  // static const _outOfScopeModify = LintCode(
+  //   name: 'mut_out_of_scope',
+  //   problemMessage: 'An out of scope variable is mutated but method is not marked `Mut`',
+  //   correctionMessage: 'Add `Mut` to end of method name',
+  //   errorSeverity: ErrorSeverity.WARNING,
+  // );
 
   @override
   void run(
@@ -191,16 +188,9 @@ class RecursiveCustomVisitor extends RecursiveAstVisitor<void> {
     return false;
   }
 
-  void _setUnmarkedMutParentNode(AstNode node) {
-    print("[${(node as dynamic).name.lexeme}] Setting current Parent Function Node.");
-    holderNode = node;
-  }
-
   void _reportProblem(AstNode node) {
     if (_alreadyConsidered.add(node.hashCode)) {
-      print("[${(node as dynamic).name.lexeme}] Reporting an error on this function for Mut violation.");
       onViolationFound(node);
-      // reporter.reportErrorForNode(lintCode, node);
     }
     holderNode = null;
   }
@@ -240,7 +230,6 @@ class RecursiveCustomVisitor extends RecursiveAstVisitor<void> {
     if (_isItemMarkedMut(node, holderNode)) {
       _reportProblem(holderNode!);
     }
-    final ne = node.element;
     super.visitAssignedVariablePattern(node);
   }
 
