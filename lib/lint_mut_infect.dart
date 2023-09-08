@@ -2,6 +2,7 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/diagnostic/diagnostic.dart';
 import 'package:analyzer/error/error.dart';
 import 'package:analyzer/error/listener.dart';
 import 'package:custom_lint_builder/custom_lint_builder.dart';
@@ -22,6 +23,56 @@ bool _nameIsMutStr(String? s) {
   return s.endsWith(_mutKeyword);
 }
 
+// /// Checks whether ths given node is named with Mut, i.e., `_doStuffMut`
+// ///
+// /// If not marked mut, that is a signal that the parent node should be reported
+bool nodeIsMarkedMut(AstNode? node) {
+  if (node == null) return false;
+  final t = extractNameFromNode(node);
+  return _nameIsMut(t);
+}
+
+/// Primitive Types like int, str, etc can't be mutated when passed as a Parameter, so ignore functions that mutate ints in their arg list
+bool isDartPrimitive(Expression e) {
+  final dt = e.staticType;
+  if (dt == null) {
+    return false;
+  }
+  if (dt.isDartCoreString | dt.isDartCoreBool || dt.isDartCoreDouble || dt.isDartCoreInt || dt.isDartCoreNum) {
+    return true;
+  }
+  return false;
+}
+
+class MutDiagnostic extends DiagnosticMessage {
+  @override
+  String get filePath => _filePath;
+  final String _filePath;
+
+  @override
+  int get length => _length;
+  final int _length;
+
+  @override
+  String messageText({required bool includeUrl}) {
+    return "lmao some extra data idk";
+  }
+
+  @override
+  int get offset => _offset;
+  final int _offset;
+
+  @override
+  String? get url => _url;
+  final String? _url;
+
+  MutDiagnostic._({required String filePath, required int length, required int offset, String? url})
+      : _filePath = filePath,
+        _offset = offset,
+        _url = url,
+        _length = length;
+}
+
 /// A plugin class is used to list all the assists/lints defined by a plugin.
 class _ExampleLinter extends PluginBase {
   /// We list all the custom warnings/infos/errors
@@ -32,23 +83,29 @@ class _ExampleLinter extends PluginBase {
 }
 
 class MutInfectLintCode extends DartLintRule {
-  MutInfectLintCode() : super(code: _unmarkedMutInvoked);
+  MutInfectLintCode() : super(code: unmarkedMutInvoked);
 
   /// Metadata about the warning that will show-up in the IDE.
   /// This is used for `// ignore: code` and enabling/disabling the lint
-  static const _unmarkedMutInvoked = LintCode(
+  static const unmarkedMutInvoked = LintCode(
     name: 'mut_infect',
     problemMessage: '`Mut` method invoked but not marked `Mut`',
     correctionMessage: 'Add `Mut` to end of method name',
     errorSeverity: ErrorSeverity.WARNING,
   );
 
-  // static const _outOfScopeModify = LintCode(
-  //   name: 'mut_out_of_scope',
-  //   problemMessage: 'An out of scope variable is mutated but method is not marked `Mut`',
-  //   correctionMessage: 'Add `Mut` to end of method name',
-  //   errorSeverity: ErrorSeverity.WARNING,
-  // );
+  static const nonLocalMutate = LintCode(
+    name: 'mut_out_of_scope',
+    problemMessage: 'An non-local variable is mutated but method is not marked `Mut`',
+    correctionMessage: 'Add `Mut` to end of method name',
+    errorSeverity: ErrorSeverity.WARNING,
+  );
+
+  static const unmarkedMutParameter = LintCode(
+    name: 'mut_param',
+    problemMessage: 'Method parameter is mutated by method, but not marked `Mut`',
+    correctionMessage: 'Add `Mut` to end of parameter name',
+  );
 
   @override
   void run(
@@ -56,25 +113,13 @@ class MutInfectLintCode extends DartLintRule {
     ErrorReporter reporter,
     CustomLintContext context,
   ) {
-    final mutViolatorVisitor = RecursiveCustomVisitor(
-      lintCode: _unmarkedMutInvoked,
-      reporter: reporter,
-      onViolationFound: (node) {
-        reporter.reportErrorForNode(_unmarkedMutInvoked, node);
-      },
-    );
+    final mutViolatorVisitor = RecurseCustom2(reporter: reporter);
 
     context.registry.addMethodDeclaration((methodDecl) {
-      mutViolatorVisitor.holderNode = null;
-      if (!_nameIsMut(methodDecl.name)) {
-        methodDecl.accept(mutViolatorVisitor);
-      }
+      methodDecl.accept(mutViolatorVisitor);
     });
     context.registry.addFunctionDeclaration((functionDecl) {
-      mutViolatorVisitor.holderNode = null;
-      if (!_nameIsMut(functionDecl.name)) {
-        functionDecl.accept(mutViolatorVisitor);
-      }
+      functionDecl.accept(mutViolatorVisitor);
     });
   }
 
@@ -131,182 +176,399 @@ class _MarkMutFix extends DartFix {
   }
 }
 
-class RecursiveCustomVisitor extends RecursiveAstVisitor<void> {
-  // 1: Define callback function
-  // that contain AST Nodes(NamedExpression, AssignmentExpression,
-  // VariableDeclaration, Annotation,...) get from visit function
+// /// Checks if a node is exempt from being required to be named `Mut`
+bool isExemptForMutInfect(AstNode node) {
+  if (node is FunctionDeclaration) {
+    /* Functions marked @override are exempt */
+    if (node.metadata.any((metadata) => metadata.name.name == "override")) {
+      return true;
+    }
+    /* Functions named 'main' are exempt */
+    if (node.name.lexeme == "main") {
+      return true;
+    }
+    /* Functions ending in 'Mut' are exempt */
+    if (node.name.lexeme.endsWith(_mutKeyword)) {
+      return true;
+    }
+    /* Setters are exempt */
+    if (node.isSetter) {
+      return true;
+    }
+  } else if (node is MethodDeclaration) {
+    /* Methods marked @override are exempt */
+    if (node.metadata.any((metadata) => metadata.name.name == "override")) {
+      return true;
+    }
+    /* Functions ending in 'Mut' are exempt */
+    if (node.name.lexeme.endsWith(_mutKeyword)) {
+      return true;
+    }
+    /* Setters are exempt */
+    if (node.isSetter) {
+      return true;
+    }
+  } else if (node is VariableDeclaration) {
+    /* Methods marked @override are exempt */
+    if (node.metadata.any((metadata) => metadata.name.name == "override")) {
+      return true;
+    }
+    /* Functions ending in 'Mut' are exempt */
+    if (node.name.lexeme.endsWith(_mutKeyword)) {
+      return true;
+    }
+  }
+  return false;
+}
 
-  final void Function(AstNode node) onViolationFound;
+Token? extractNameFromNode(AstNode? node) {
+  if (node is FunctionDeclaration) {
+    return node.name;
+  } else if (node is MethodDeclaration) {
+    return node.name;
+  } else if (node is VariableDeclaration) {
+    return node.name;
+  } else if (node is DeclaredIdentifier) {
+    return node.name;
+  } else if (node is DeclaredVariablePattern) {
+    return node.name;
+  } else if (node is EnumDeclaration) {
+    return node.name;
+  } else if (node is ClassDeclaration) {
+    return node.name;
+  } else if (node is FieldDeclaration) {
+    return node.endToken;
+  } else if (node is FieldFormalParameter) {
+    return node.name;
+  } else if (node is TypeParameter) {
+    return node.name;
+  } else if (node is DefaultFormalParameter) {
+    return node.name;
+  } else if (node is SimpleFormalParameter) {
+    return node.name;
+  } else if (node is SuperFormalParameterElement) {
+    return node?.endToken;
+  } else if (node is NormalFormalParameter) {
+    return node.name;
+  } else if (node is SuperFormalParameter) {
+    return node.name;
+  } else if (node is FieldFormalParameter) {
+    return node.name;
+  } else if (node is CatchClauseParameter) {
+    return node.name;
+  } else if (node is FormalParameter) {
+    return node.name;
+  } else if (node is MethodInvocation) {
+    return node.methodName.token;
+  } else if (node is FunctionExpressionInvocation) {
+    return null;
+    // node.
+    // node.function.
+  }
+  return null;
+}
 
-  final LintCode lintCode;
+/// For keeping track of local variables so we don't incorrectly mark inner functions as requiring Mut
+class Scope {
+  final Token? scopeName;
+  final Map<String, Token> declaredVariables = <String, Token>{};
+  final Map<String, Token> parameterVariables = <String, Token>{};
+  final Set<Scope> innerScopes = <Scope>{};
+  final AstNode? scopeSource;
+
+  final Scope? parentScope;
+
+  bool get isRootScope => scopeName == null;
+
+  Scope({required this.scopeName, required this.scopeSource, required this.parentScope});
+
+  Token? isDefinedAsParameter(String lexeme) {
+    return parameterVariables[lexeme];
+  }
+
+  Token? isDefinedAsLocal(String lexeme) {
+    return declaredVariables[lexeme];
+  }
+
+  void addInnerScope(Scope s) {
+    innerScopes.add(s);
+  }
+
+  void addDeclaredLocal(Token t) {
+    declaredVariables[t.lexeme] = t;
+  }
+
+  void addDeclaredParameter(Token t) {
+    parameterVariables[t.lexeme] = t;
+  }
+
+  bool crawlContains(String lexeme) {
+    if (isDefinedAsLocal(lexeme) != null) {
+      return true;
+    } else if (parentScope != null && !parentScope!.isRootScope) {
+      return parentScope!.crawlContains(lexeme);
+    }
+    return false;
+  }
+
+  /// We don't care if a strictly local function call is mutating strictly local variables
+  bool belongsToNonRootParent(AstNode? node) {
+    if (node == null) {
+      return false;
+    }
+    if (isRootScope || (parentScope?.isRootScope ?? false)) {
+      return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => scopeName.hashCode;
+
+  @override
+  bool operator ==(Object other) {
+    return other is Scope && other.scopeName == scopeName;
+  }
+}
+
+class RecurseCustom2 extends RecursiveAstVisitor<void> {
   final ErrorReporter reporter;
 
-  AstNode? holderNode;
-  final Set<int> _alreadyConsidered = <int>{};
+  List<String> currentPath = [];
 
-  // 2: Constructor
-  RecursiveCustomVisitor({required this.lintCode, required this.reporter, required this.onViolationFound});
+  Map<String, Scope> scopesAtPath = <String, Scope>{
+    "": Scope(scopeName: null, scopeSource: null, parentScope: null),
+  };
 
-  /// Whether this node should be looked at to consider if it is misnamed
-  ///
-  /// Only applies to Function or Method Declaration nodes
-  ///
-  /// Ignores functions whos name is `main`, or anything that `@override`
-  bool _shouldConsiderDefinitionNode(AstNode node) {
-    if (holderNode == null && node is FunctionDeclaration || node is MethodDeclaration) {
-      return !_isExempt(node);
-    }
-    return false;
-  }
+  Set<int> alreadyConsidered = <int>{};
 
-  /// Checks whether ths given node is named with Mut, i.e., `_doStuffMut`
-  ///
-  /// If not marked mut, that is a signal that the parent node should be reported
-  bool _isItemMarkedMut(AstNode currentNode, AstNode? containingFunctionNode) {
-    if (containingFunctionNode == null) return false;
-    if (currentNode is FunctionDeclaration) {
-      return _nameIsMut(currentNode.name);
-    } else if (currentNode is MethodDeclaration) {
-      return _nameIsMut(currentNode.name);
-    } else if (currentNode is VariableDeclaration) {
-      return _nameIsMut(currentNode.name);
-    } else if (currentNode is AssignedVariablePattern) {
-      return _nameIsMut(currentNode.name);
-    } else if (currentNode is DeclaredIdentifier) {
-      return _nameIsMut(currentNode.name);
-    } else if (currentNode is DeclaredVariablePattern) {
-      return _nameIsMut(currentNode.name);
-    } else if (currentNode is MethodInvocation) {
-      return _nameIsMut(currentNode.methodName.token);
-    } else if (currentNode is SimpleFormalParameter) {
-      return _nameIsMut(currentNode.name);
-    } else if (currentNode is SimpleIdentifier) {
-      return _nameIsMut(currentNode.token);
-    } else if (currentNode is SuperFormalParameter) {
-      return _nameIsMut(currentNode.name);
-    }
-    return false;
-  }
+  RecurseCustom2({required this.reporter});
 
-  void _reportProblem(AstNode node) {
-    if (_alreadyConsidered.add(node.hashCode)) {
-      onViolationFound(node);
-    }
-    holderNode = null;
-  }
-
-  bool _isExempt(AstNode node) {
-    bool isExemptElement(Element? e) {
-      return (e == null || e.hasOverride);
-    }
-
-    bool isExemptElementAnnotation(ElementAnnotation? e) {
-      return (e == null || isExemptElement(e.element));
-    }
-
-    if (node is FunctionDeclaration) {
-      return node.name.lexeme == "main" || node.metadata.any((element) => isExemptElement(element.element) || isExemptElementAnnotation(element.elementAnnotation));
-    } else if (node is MethodDeclaration) {
-      return node.metadata.any((element) => element.name.name == "override" || isExemptElement(element.element) || isExemptElementAnnotation(element.elementAnnotation));
-    } else if (node is FieldDeclaration) {
-      return node.metadata.any((element) => element.name.name == "override" || isExemptElement(element.element) || isExemptElementAnnotation(element.elementAnnotation));
-    } else if (node is VariableDeclaration) {
-      return node.metadata.any((element) => element.name.name == "override" || isExemptElement(element.element) || isExemptElementAnnotation(element.elementAnnotation));
-    }
-    return false;
-  }
-
-  // 3: Override visit function that receives AST Node
-  @override
-  void visitVariableDeclaration(VariableDeclaration node) {
-    if (_isItemMarkedMut(node, holderNode)) {
-      _reportProblem(holderNode!);
-    }
-    super.visitVariableDeclaration(node);
-  }
-
-  @override
-  void visitAssignedVariablePattern(AssignedVariablePattern node) {
-    if (_isItemMarkedMut(node, holderNode)) {
-      _reportProblem(holderNode!);
-    }
-    super.visitAssignedVariablePattern(node);
-  }
-
-  @override
-  void visitDeclaredIdentifier(DeclaredIdentifier node) {
-    if (_isItemMarkedMut(node, holderNode)) {
-      _reportProblem(holderNode!);
-    }
-    super.visitDeclaredIdentifier(node);
-  }
-
-  @override
-  void visitDeclaredVariablePattern(DeclaredVariablePattern node) {
-    if (_isItemMarkedMut(node, holderNode)) {
-      _reportProblem(holderNode!);
-    }
-    super.visitDeclaredVariablePattern(node);
-  }
+  String get _path => currentPath.join('/');
 
   @override
   void visitFunctionDeclaration(FunctionDeclaration node) {
-    if (holderNode == null) {
-      if (_shouldConsiderDefinitionNode(node)) {
-        holderNode = node;
-      }
-    }
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
 
-    super.visitFunctionDeclaration(node);
+      /* push path */
+      currentPath.add("FunctionDeclaration(${node.name.lexeme})");
+
+      /* Scope work */
+      var thisScope = Scope(scopeName: node.name, scopeSource: node, parentScope: parentScope);
+      scopesAtPath[_path] = thisScope;
+      parentScope.addInnerScope(thisScope);
+
+      super.visitFunctionDeclaration(node);
+
+      /* cleanup path */
+      currentPath.removeLast();
+    }
   }
 
   @override
   void visitMethodDeclaration(MethodDeclaration node) {
-    if (holderNode == null) {
-      if (_shouldConsiderDefinitionNode(node)) {
-        holderNode = node;
-      }
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      /* push path */
+      currentPath.add("MethodDeclaration(${node.name.lexeme})");
+
+      /* Scope work */
+      var thisScope = Scope(scopeName: node.name, scopeSource: node, parentScope: parentScope);
+      scopesAtPath[_path] = thisScope;
+      parentScope.addInnerScope(thisScope);
+
+      super.visitMethodDeclaration(node);
+
+      /* cleanup path */
+      currentPath.removeLast();
     }
-    super.visitMethodDeclaration(node);
+  }
+
+  @override
+  void visitVariableDeclaration(VariableDeclaration node) {
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      parentScope.addDeclaredLocal(node.name);
+
+      super.visitVariableDeclaration(node);
+    }
+  }
+
+  @override
+  void visitAssignedVariablePattern(AssignedVariablePattern node) {
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      super.visitAssignedVariablePattern(node);
+    }
+  }
+
+  @override
+  void visitAssignmentExpression(AssignmentExpression node) {
+    if (alreadyConsidered.add(node.hashCode)) {
+      final targetName = node.leftHandSide.beginToken.lexeme;
+
+      var parentScope = scopesAtPath[_path]!;
+      final definedParam = parentScope.isDefinedAsParameter(targetName);
+      final definedLocal = parentScope.isDefinedAsLocal(targetName);
+      if (definedParam != null) {
+        /* check name */
+        if (!_nameIsMut(definedParam)) {
+          reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutParameter, definedParam);
+        }
+      } else if (definedLocal == null) {
+        if (!parentScope.crawlContains(targetName)) {
+          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!)) {
+            reporter.reportErrorForToken(MutInfectLintCode.nonLocalMutate, extractNameFromNode(parentScope.scopeSource)!);
+          }
+        }
+      }
+
+      super.visitAssignmentExpression(node);
+    }
+  }
+
+  @override
+  void visitCascadeExpression(CascadeExpression node) {
+    if (alreadyConsidered.add(node.hashCode)) {
+      final targetName = node.target.beginToken.lexeme;
+
+      var parentScope = scopesAtPath[_path]!;
+
+      final definedParam = parentScope.isDefinedAsParameter(targetName);
+      final definedLocal = parentScope.isDefinedAsLocal(targetName);
+
+      if (definedParam != null) {
+        if (!_nameIsMut(definedParam)) {
+          reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutParameter, definedParam);
+        }
+      } else if (definedLocal == null) {
+        if (!parentScope.crawlContains(targetName)) {
+          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!)) {
+            reporter.reportErrorForToken(MutInfectLintCode.nonLocalMutate, extractNameFromNode(parentScope.scopeSource)!);
+          }
+        }
+      }
+      super.visitCascadeExpression(node);
+    }
+  }
+
+  @override
+  void visitPatternAssignment(PatternAssignment node) {
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      super.visitPatternAssignment(node);
+    }
+  }
+
+  @override
+  void visitDeclaredIdentifier(DeclaredIdentifier node) {
+    print(node);
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      parentScope.addDeclaredParameter(node.name);
+
+      super.visitDeclaredIdentifier(node);
+    }
+  }
+
+  @override
+  void visitDeclaredVariablePattern(DeclaredVariablePattern node) {
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      parentScope.addDeclaredParameter(node.name);
+
+      super.visitDeclaredVariablePattern(node);
+    }
+  }
+
+  @override
+  void visitFunctionExpression(FunctionExpression node) {
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      super.visitFunctionExpression(node);
+    }
   }
 
   @override
   void visitFunctionTypeAlias(FunctionTypeAlias node) {
-    if (_isItemMarkedMut(node, holderNode)) {
-      _reportProblem(holderNode!);
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      super.visitFunctionTypeAlias(node);
     }
-    super.visitFunctionTypeAlias(node);
   }
 
   @override
   void visitMethodInvocation(MethodInvocation node) {
-    if (_isItemMarkedMut(node, holderNode)) {
-      _reportProblem(holderNode!);
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      print("is in MethodInco");
+
+      print(node);
+
+      if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource)) {
+        reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutInvoked, parentScope.scopeName!);
+      }
+
+      super.visitMethodInvocation(node);
     }
-    super.visitMethodInvocation(node);
+  }
+
+  @override
+  void visitFunctionExpressionInvocation(FunctionExpressionInvocation node) {
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      print("is in Expr");
+      print(node);
+
+      if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource)) {
+        reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutInvoked, parentScope.scopeName!);
+      }
+
+      super.visitFunctionExpressionInvocation(node);
+    }
   }
 
   @override
   void visitSimpleFormalParameter(SimpleFormalParameter node) {
-    if (_isItemMarkedMut(node, holderNode)) {
-      _reportProblem(holderNode!);
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      if (node.name != null) {
+        parentScope.addDeclaredParameter(node.name!);
+      }
+
+      super.visitSimpleFormalParameter(node);
     }
-    super.visitSimpleFormalParameter(node);
   }
 
   @override
   void visitSimpleIdentifier(SimpleIdentifier node) {
-    if (_isItemMarkedMut(node, holderNode)) {
-      _reportProblem(holderNode!);
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      super.visitSimpleIdentifier(node);
     }
-    super.visitSimpleIdentifier(node);
   }
 
   @override
   void visitSuperFormalParameter(SuperFormalParameter node) {
-    if (_isItemMarkedMut(node, holderNode)) {
-      _reportProblem(holderNode!);
+    if (alreadyConsidered.add(node.hashCode)) {
+      var parentScope = scopesAtPath[_path]!;
+
+      parentScope.addDeclaredParameter(node.name);
+
+      super.visitSuperFormalParameter(node);
     }
-    super.visitSuperFormalParameter(node);
   }
 }
