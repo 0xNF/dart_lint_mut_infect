@@ -1,5 +1,3 @@
-import 'dart:html';
-
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
@@ -504,7 +502,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
         }
       } else if (definedLocal == null) {
         if (!parentScope.crawlContains(targetName)) {
-          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!)) {
+          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!) && (node.parent is! VariableDeclaration)) {
             if (alreadyConsideredForMutOutOfScope.add(parentScope.scopeSource.hashCode)) {
               reporter.reportErrorForToken(MutInfectLintCode.outOfScopeMutate, extractNameFromNode(parentScope.scopeSource)!);
             }
