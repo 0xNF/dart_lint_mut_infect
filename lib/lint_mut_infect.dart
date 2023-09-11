@@ -472,7 +472,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
         }
       } else if (definedLocal == null) {
         if (!parentScope.crawlContains(targetName)) {
-          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!)) {
+          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!) && !isCascadeParentDeclaration(node)) {
             if (alreadyConsideredForMutOutOfScope.add(parentScope.scopeSource.hashCode)) {
               reporter.reportErrorForToken(MutInfectLintCode.outOfScopeMutate, extractNameFromNode(parentScope.scopeSource)!);
             }
@@ -482,6 +482,17 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
       super.visitAssignmentExpression(node);
     }
+  }
+
+  bool isCascadeParentDeclaration(AstNode? node) {
+    AstNode? current = node;
+    while (current != null) {
+      if (current is VariableDeclaration) {
+        return true;
+      }
+      current = current.parent;
+    }
+    return false;
   }
 
   @override
@@ -502,7 +513,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
         }
       } else if (definedLocal == null) {
         if (!parentScope.crawlContains(targetName)) {
-          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!) && (node.parent is! VariableDeclaration)) {
+          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!) && !isCascadeParentDeclaration(node)) {
             if (alreadyConsideredForMutOutOfScope.add(parentScope.scopeSource.hashCode)) {
               reporter.reportErrorForToken(MutInfectLintCode.outOfScopeMutate, extractNameFromNode(parentScope.scopeSource)!);
             }
