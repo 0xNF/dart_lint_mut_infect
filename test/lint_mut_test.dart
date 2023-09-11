@@ -1,4 +1,4 @@
-// ignore_for_file: avoid_single_cascade_in_expression_statements, unnecessary_getters_setters, unused_local_variable
+// ignore_for_file: avoid_single_cascade_in_expression_statements, unnecessary_getters_setters, unused_local_variable, unused_element
 
 int globalScopeVar = 0;
 
