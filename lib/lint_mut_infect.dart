@@ -8,7 +8,7 @@ import 'package:analyzer/error/error.dart';
 import 'package:analyzer/error/listener.dart';
 import 'package:custom_lint_builder/custom_lint_builder.dart';
 
-PluginBase createPlugin() => _ExampleLinter();
+PluginBase createPlugin() => _MutLinter();
 
 const String _mutKeyword = "Mut";
 const String _overrideKeyword = "override";
@@ -23,6 +23,14 @@ bool _nameIsMutStr(String? s) {
     return false;
   }
   return s.endsWith(_mutKeyword);
+}
+
+bool _nameIsMaybeMutable(String? s) {
+  if (s == null) {
+    return false;
+  }
+  const heuristics = <String>['create', 'update', 'delete', 'edit', 'setState', 'add', 'clear', 'remove', 'insert'];
+  return heuristics.any((element) => s.startsWith(element));
 }
 
 // /// Checks whether ths given node is named with Mut, i.e., `_doStuffMut`
@@ -114,7 +122,7 @@ class MutDiagnostic extends DiagnosticMessage {
 }
 
 /// A plugin class is used to list all the assists/lints defined by a plugin.
-class _ExampleLinter extends PluginBase {
+class _MutLinter extends PluginBase {
   /// We list all the custom warnings/infos/errors
   @override
   List<LintRule> getLintRules(CustomLintConfigs configs) => [
@@ -146,6 +154,20 @@ class MutInfectLintCode extends DartLintRule {
     problemMessage: 'Method parameter is mutated by method, but not marked `Mut`',
     correctionMessage: 'Add `Mut` to end of parameter name',
     errorSeverity: ErrorSeverity.ERROR,
+  );
+
+  static const unnecessaryMutInfect = LintCode(
+    name: 'unnecessary_mut_infect',
+    problemMessage: 'This method is marked as `Mut` but it doesn\'t contain any mutating functionality',
+    correctionMessage: 'Remove `Mut` from the end of this method name',
+    errorSeverity: ErrorSeverity.WARNING,
+  );
+
+  static const unnecessaryMutParam = LintCode(
+    name: 'unnecessary_mut_param',
+    problemMessage: 'This parameter is marked as `Mut` but isn\'t mutated by anything in the containing scope',
+    correctionMessage: 'Remove `Mut` from the end of this parameter name',
+    errorSeverity: ErrorSeverity.WARNING,
   );
 
   @override
@@ -240,14 +262,6 @@ bool isExemptForMutInfect(AstNode? node) {
     }
   } else if (node is MethodDeclaration) {
     /* Methods marked @override are exempt */
-    if (node.metadata.isNotEmpty) {
-      print("NODE META NOT EMPTY");
-      for (final elem in node.metadata) {
-        print('elem toString(): $elem');
-        print('elem name.toString(): ${elem.name}');
-        print('elem name.name: ${elem.name.name}');
-      }
-    }
     if (node.metadata.any((metadata) => metadata.name.name == _overrideKeyword)) {
       return true;
     }
@@ -327,7 +341,12 @@ class TokenType {
   final Token token;
   final bool isPrimitive;
 
-  const TokenType({required this.token, required this.isPrimitive});
+  bool get isNameMut => _nameIsMut(token);
+
+  /// Whether this token should be marked as mut, regardless of whether its named Mut or not
+  bool shouldBeMut;
+
+  TokenType({required this.token, required this.isPrimitive, this.shouldBeMut = false});
 }
 
 /// For keeping track of local variables so we don't incorrectly mark inner functions as requiring Mut
@@ -335,8 +354,12 @@ class Scope {
   final Token? scopeName;
   final Map<String, TokenType> declaredVariables = <String, TokenType>{};
   final Map<String, TokenType> parameterVariables = <String, TokenType>{};
+  final Set<String> invocations = <String>{};
   final Set<Scope> innerScopes = <Scope>{};
   final AstNode? scopeSource;
+
+  bool get isNameMut => _nameIsMut(scopeName);
+  bool shouldBeMut = false;
 
   final Scope? parentScope;
 
@@ -344,12 +367,46 @@ class Scope {
 
   Scope({required this.scopeName, required this.scopeSource, required this.parentScope});
 
+  /// Whether this scope contains any correct Mut entries
+  bool containsAnyMut() {
+    if (shouldBeMut) {
+      return true;
+    }
+    for (final variable in declaredVariables.entries) {
+      if (variable.value.shouldBeMut) {
+        return true;
+      }
+    }
+    for (final param in parameterVariables.entries) {
+      if (param.value.shouldBeMut) {
+        return true;
+      }
+    }
+    if (invocations.any((element) => _nameIsMutStr(element) || _nameIsMaybeMutable(element))) {
+      return true;
+    }
+    if (innerScopes.isEmpty) {
+      return false;
+    } else {
+      for (final innerScope in innerScopes) {
+        if (nodeIsMarkedMut(innerScope.scopeSource) || innerScope.containsAnyMut()) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   TokenType? isDefinedAsParameter(String lexeme) {
     return parameterVariables[lexeme];
   }
 
   TokenType? isDefinedAsLocal(String lexeme) {
     return declaredVariables[lexeme];
+  }
+
+  void addInvocation(String s) {
+    invocations.add(s);
   }
 
   void addInnerScope(Scope s) {
@@ -426,6 +483,10 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
       super.visitFunctionDeclaration(node);
 
+      if (nodeIsMarkedMut(thisScope.scopeSource) && !thisScope.containsAnyMut()) {
+        reporter.reportErrorForToken(MutInfectLintCode.unnecessaryMutInfect, extractNameFromNode(thisScope.scopeSource)!);
+      }
+
       /* cleanup path */
       currentPath.removeLast();
     }
@@ -445,6 +506,10 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
       parentScope.addInnerScope(thisScope);
 
       super.visitMethodDeclaration(node);
+
+      if (nodeIsMarkedMut(thisScope.scopeSource) && !thisScope.containsAnyMut()) {
+        reporter.reportErrorForToken(MutInfectLintCode.unnecessaryMutInfect, extractNameFromNode(thisScope.scopeSource)!);
+      }
 
       /* cleanup path */
       currentPath.removeLast();
@@ -483,17 +548,26 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
         /* check name */
         if (!_nameIsMut(definedParam.token) && !definedParam.isPrimitive && node.leftHandSide.childEntities.length > 1) {
           if (alreadyConsideredForMutParam.add(definedParam.token.hashCode)) {
+            definedParam.shouldBeMut = true;
             reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutParameter, definedParam.token);
           }
         }
+        definedParam.shouldBeMut = true;
       } else if (definedLocal == null) {
         if (!parentScope.crawlContains(targetName)) {
-          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!) && !isCascadeExempt(node)) {
-            if (alreadyConsideredForMutOutOfScope.add(parentScope.scopeSource.hashCode)) {
-              reporter.reportErrorForToken(MutInfectLintCode.outOfScopeMutate, extractNameFromNode(parentScope.scopeSource)!);
+          final isMarkedMut = nodeIsMarkedMut(parentScope.scopeSource);
+          if (!isMarkedMut) {
+            if (!isExemptForMutInfect(parentScope.scopeSource) && !isCascadeExempt(node)) {
+              if (alreadyConsideredForMutOutOfScope.add(parentScope.scopeSource.hashCode)) {
+                parentScope.shouldBeMut = true;
+                reporter.reportErrorForToken(MutInfectLintCode.outOfScopeMutate, extractNameFromNode(parentScope.scopeSource)!);
+              }
             }
           }
         }
+        parentScope.shouldBeMut = true;
+      } else if (_nameIsMut(definedLocal.token)) {
+        definedLocal.shouldBeMut = true;
       }
 
       super.visitAssignmentExpression(node);
@@ -513,17 +587,23 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
       if (definedParam != null) {
         if (!_nameIsMut(definedParam.token) && !definedParam.isPrimitive && node.childEntities.length > 1) {
           if (alreadyConsideredForMutParam.add(definedParam.token.hashCode)) {
+            definedParam.shouldBeMut = true;
             reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutParameter, definedParam.token);
           }
         }
       } else if (definedLocal == null) {
+        /* check name */
         if (!parentScope.crawlContains(targetName)) {
           if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!) && !isCascadeExempt(node)) {
             if (alreadyConsideredForMutOutOfScope.add(parentScope.scopeSource.hashCode)) {
+              parentScope.shouldBeMut = true;
               reporter.reportErrorForToken(MutInfectLintCode.outOfScopeMutate, extractNameFromNode(parentScope.scopeSource)!);
             }
           }
         }
+        parentScope.shouldBeMut = true;
+      } else if (_nameIsMut(definedLocal.token)) {
+        definedLocal.shouldBeMut = true;
       }
       super.visitCascadeExpression(node);
     }
@@ -584,8 +664,11 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
     if (alreadyConsideredNode.add(node.hashCode)) {
       var parentScope = scopesAtPath[_path]!;
 
+      parentScope.addInvocation(extractNameFromNode(node)?.lexeme ?? '');
+
       if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource)) {
         if (alreadyConsideredForMutInfect.add(parentScope.scopeSource.hashCode)) {
+          parentScope.shouldBeMut = true;
           reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutInvoked, parentScope.scopeName!);
         }
       }
@@ -598,6 +681,9 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
   void visitFunctionExpressionInvocation(FunctionExpressionInvocation node) {
     if (alreadyConsideredNode.add(node.hashCode)) {
       var parentScope = scopesAtPath[_path]!;
+
+      parentScope.addInvocation(extractNameFromNode(node)?.lexeme ?? '');
+
       if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource)) {
         if (alreadyConsideredForMutInfect.add(parentScope.scopeSource.hashCode)) {
           reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutInvoked, parentScope.scopeName!);

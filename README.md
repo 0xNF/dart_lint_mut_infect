@@ -7,6 +7,37 @@ There are 3 lints included in this package:
 1. [mut_out_of_scope](#mut_out_of_scope)
 1. [mut_param](#mut_param)
 
+
+## Adding to Your Project
+Taken from [custom_lint](https://pub.dev/packages/custom_lint#enablingdisabling-and-configuring-lint):
+* The application must contain an `analysis_options.yaml` with the following
+```yaml
+analyzer:
+  plugins:
+    - custom_lint
+```
+* The application also needs to add custom_lint and our package(s) as dev dependency in their application:
+```yaml
+# The pubspec.yaml of an application using our lints
+name: example_app
+environment:
+  sdk: ">=2.16.0 <3.0.0"
+
+dev_dependencies:
+  custom_lint:
+  lint_mut_infect:
+```
+
+### Disabling a lint
+If you want to disable certain lints, add the following to the `analysis_options.yaml` file:
+```yaml
+lint_mut_infect:
+  rules:
+    - unnecessary_mut_infect: false # disable this rule
+```
+
+All rules are enabled by default.
+
 ## mut_infect
 
 Produces: Warning
