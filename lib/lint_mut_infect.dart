@@ -463,7 +463,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
       final definedLocal = parentScope.isDefinedAsLocal(targetName);
       if (definedParam != null) {
         /* check name */
-        if (!_nameIsMut(definedParam.token) && !definedParam.isPrimitive) {
+        if (!_nameIsMut(definedParam.token) && !definedParam.isPrimitive && node.leftHandSide.childEntities.length > 1) {
           reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutParameter, definedParam.token);
         }
       } else if (definedLocal == null) {
