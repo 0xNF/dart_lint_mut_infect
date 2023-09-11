@@ -487,6 +487,12 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
   bool isCascadeParentDeclaration(AstNode? node) {
     AstNode? current = node;
     while (current != null) {
+      if (current is CascadeExpression && current.target is InstanceCreationExpression) {
+        return true;
+      }
+      if (current is InstanceCreationExpression) {
+        return true;
+      }
       if (current is VariableDeclaration) {
         return true;
       }
