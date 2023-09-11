@@ -1,4 +1,7 @@
 # Overview
+This linter enforces certain naming conventions when dealing with methods that mutate variables:
+
+## infect_mut
 Enforces infectious naming conventions on Method and Function declarations:
 
 ```dart
@@ -27,6 +30,9 @@ function setSomethingMut() {
 
 This way you can establish a chain of all functions that mutate variables.
 
+
+## unlabled_mut
+Detects variables being assigned that were not declared in scope, and marks those methods as requiring the `Mut` marker
 
 # Exemptions
 

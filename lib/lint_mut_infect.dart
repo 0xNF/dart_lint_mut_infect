@@ -105,6 +105,7 @@ class MutInfectLintCode extends DartLintRule {
     name: 'mut_param',
     problemMessage: 'Method parameter is mutated by method, but not marked `Mut`',
     correctionMessage: 'Add `Mut` to end of parameter name',
+    errorSeverity: ErrorSeverity.ERROR,
   );
 
   @override
@@ -511,10 +512,6 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
     if (alreadyConsidered.add(node.hashCode)) {
       var parentScope = scopesAtPath[_path]!;
 
-      print("is in MethodInco");
-
-      print(node);
-
       if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource)) {
         reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutInvoked, parentScope.scopeName!);
       }
@@ -527,10 +524,6 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
   void visitFunctionExpressionInvocation(FunctionExpressionInvocation node) {
     if (alreadyConsidered.add(node.hashCode)) {
       var parentScope = scopesAtPath[_path]!;
-
-      print("is in Expr");
-      print(node);
-
       if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource)) {
         reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutInvoked, parentScope.scopeName!);
       }
