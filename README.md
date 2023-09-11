@@ -3,9 +3,9 @@ This linter enforces certain naming conventions when dealing with methods that m
 
 There are 3 lints included in this package:
 
-1. `mut_infect`
-1. `mut_out_of_scope`
-1. `mut_param`
+1. [mut_infect](#mut_infect)
+1. [mut_out_of_scope](#mut_out_of_scope)
+1. [mut_param](#mut_param)
 
 ## mut_infect
 
