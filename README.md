@@ -72,6 +72,10 @@ This lint is stronger than the others because it is very important for a caller 
 Any function or method marked `@override`, or any function named `main` will not be flagged.  
 This means you wont be overloaded with warnings when dealing with names you don't control.
 
+
+# Known Bugs
+    #1 - Some functions with inner scope `Mut` calls mutating a variable owned entirely by the calling scope still require their parent scope to be marked as `Mut`, even though they're mutating fully-owned local variables.
+
 # Debugging
 To debug,
 
