@@ -74,7 +74,8 @@ This means you wont be overloaded with warnings when dealing with names you don'
 
 
 # Known Bugs
-#1 - Some functions with inner scope `Mut` calls mutating a variable owned entirely by the calling scope still require their parent scope to be marked as `Mut`, even though they're mutating fully-owned local variables.
+- #1
+Some functions with inner scope `Mut` calls mutating a variable owned entirely by the calling scope still require their parent scope to be marked as `Mut`, even though they're mutating fully-owned local variables.
 
 # Debugging
 To debug,
