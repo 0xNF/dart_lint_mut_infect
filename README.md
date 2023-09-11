@@ -1,38 +1,71 @@
 # Overview
-This linter enforces certain naming conventions when dealing with methods that mutate variables:
+This linter enforces certain naming conventions when dealing with methods that mutate variables
 
-## infect_mut
-Enforces infectious naming conventions on Method and Function declarations:
+There are 3 lints included in this package:
 
-```dart
-function someFunction() {
-    setSomethingMut();
-}
+1. `mut_infect`
+1. `mut_out_of_scope`
+1. `mut_param`
 
-function setSomethingMut() {
-    // omitted
-}
-```
+## mut_infect
+
+Produces: Warning
+
+Enforces infectious naming conventions on Method and Function declarations.   
+Something that invokes a `Mut` element should also be called `Mut`.  
+
+
+![Code demonstrating the `Mut Infect lint`, where a method that should be marked with Mut because it calls a method marked Mut](/docs/readme/lint_mut_infect.png)
 
 This produces the following message: `'Mut' method invoked but not marked 'Mut'`
 
 The suggested fix is to rename the calling function:
 
 ```dart
-function someFunctionMut() {
-    setSomethingMut();
-}
-
-function setSomethingMut() {
-    // omitted
+function markThisDummyMut() {
+    dummyMut();
 }
 ```
 
 This way you can establish a chain of all functions that mutate variables.
 
+### Exemptions
+This lint is not applied when the element is:
+1. Marked with `@override`
+1. A function named `main`
+1. A `setter`
 
-## unlabled_mut
-Detects variables being assigned that were not declared in scope, and marks those methods as requiring the `Mut` marker
+## mut_out_of_scope
+Produces: Warning
+
+This lint checks that variables that are modified within a function are declared within that function, or are contained entirely within the lexical scope of the function in question. For instance:
+
+![Code demonstrating the `Mut Out of Scope` lint, where a method is modifying a variable not declared in the lexical scope](/docs/readme/lint_mut_out_of_scope.png)
+
+In this example, `globalScopeVar` is not declared within the `outOfScopeModifier` function, but is modified anyway. This produces a warning that the function should be marked with `Mut`.
+
+This lint also understands locally defined functions, and won't cause undue warnings for strictly-local declarations:
+
+![Code demonstrating that `Mut Out of Scope` doesn't apply to variables that have a perfectly captured lexical scope chain](/docs/readme/lint_inner_funtions_not_included.png)
+
+In the above image, although `i` is modified by `inner()` , inner will not be marked as requiring Mut, because all declarations are local to the lexical scope of the top-level containing function.  
+
+
+### Exemptions
+This lint is not applied when the element is:
+1. Marked with `@override`
+1. A function named `main`
+1. A `setter`
+
+## mut_param
+Produces: Error
+
+This lint checks that any variable that is passed a parameter and is modified by the function is marked with `Mut`.   
+This lint is stronger than the others because it is very important for a caller to know whether some object of theirs is going to be modified or not.
+
+![Code demonstrating the `Mut Param` lint, where a parameter passed to the function is modified inside the function](/docs/readme/lit_mut_unmarked_param.png)
+
+ were not declared in scope, and marks those methods as requiring the `Mut` marker
 
 # Exemptions
 
