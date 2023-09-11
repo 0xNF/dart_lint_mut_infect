@@ -2,6 +2,7 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/dart/element/type.dart';
 import 'package:analyzer/diagnostic/diagnostic.dart';
 import 'package:analyzer/error/error.dart';
 import 'package:analyzer/error/listener.dart';
@@ -32,9 +33,47 @@ bool nodeIsMarkedMut(AstNode? node) {
   return _nameIsMut(t);
 }
 
-/// Primitive Types like int, str, etc can't be mutated when passed as a Parameter, so ignore functions that mutate ints in their arg list
-bool isDartPrimitive(Expression e) {
-  final dt = e.staticType;
+/// Primitive Types: `[int, double, num, bool, string]`, etc can't be mutated when passed as a Parameter, so ignore functions that mutate ints in their arg list
+bool isDartPrimitive(AstNode node) {
+  DartType? dt;
+  if (node is Expression) {
+    dt = node.staticType;
+  } else if (node is SimpleFormalParameter) {
+    dt = node.type?.type;
+  } else if (node is FormalParameter) {
+    dt = node.declaredElement?.type;
+  } else if (node is CatchClauseParameter) {
+    dt = node.declaredElement?.type;
+  } else if (node is VariableDeclaration) {
+    dt = node.declaredElement?.type;
+  } else if (node is DeclaredIdentifier) {
+    dt = node.type?.type ?? node.declaredElement?.type;
+  } else if (node is DeclaredVariablePattern) {
+    dt = node.type?.type ?? node.declaredElement?.type;
+  } else if (node is FieldDeclaration) {
+    dt = null;
+  } else if (node is FieldFormalParameter) {
+    dt = node.type?.type ?? node.declaredElement?.type;
+  } else if (node is TypeParameter) {
+    dt = null;
+  } else if (node is DefaultFormalParameter) {
+    dt = node.declaredElement?.type;
+  } else if (node is SimpleFormalParameter) {
+    dt = node.type?.type ?? node.declaredElement?.type;
+  } else if (node is SuperFormalParameterElement) {
+    dt = null;
+  } else if (node is NormalFormalParameter) {
+    dt = node.declaredElement?.type;
+  } else if (node is SuperFormalParameter) {
+    dt = node.type?.type ?? node.declaredElement?.type;
+  } else if (node is FieldFormalParameter) {
+    dt = node.type?.type ?? node.declaredElement?.type;
+  } else if (node is CatchClauseParameter) {
+    dt = node.declaredElement?.type;
+  } else if (node is FormalParameter) {
+    dt = node.declaredElement?.type;
+  }
+
   if (dt == null) {
     return false;
   }
@@ -269,11 +308,18 @@ Token? extractNameFromNode(AstNode? node) {
   return null;
 }
 
+class TokenType {
+  final Token token;
+  final bool isPrimitive;
+
+  const TokenType({required this.token, required this.isPrimitive});
+}
+
 /// For keeping track of local variables so we don't incorrectly mark inner functions as requiring Mut
 class Scope {
   final Token? scopeName;
-  final Map<String, Token> declaredVariables = <String, Token>{};
-  final Map<String, Token> parameterVariables = <String, Token>{};
+  final Map<String, TokenType> declaredVariables = <String, TokenType>{};
+  final Map<String, TokenType> parameterVariables = <String, TokenType>{};
   final Set<Scope> innerScopes = <Scope>{};
   final AstNode? scopeSource;
 
@@ -283,11 +329,11 @@ class Scope {
 
   Scope({required this.scopeName, required this.scopeSource, required this.parentScope});
 
-  Token? isDefinedAsParameter(String lexeme) {
+  TokenType? isDefinedAsParameter(String lexeme) {
     return parameterVariables[lexeme];
   }
 
-  Token? isDefinedAsLocal(String lexeme) {
+  TokenType? isDefinedAsLocal(String lexeme) {
     return declaredVariables[lexeme];
   }
 
@@ -295,12 +341,12 @@ class Scope {
     innerScopes.add(s);
   }
 
-  void addDeclaredLocal(Token t) {
-    declaredVariables[t.lexeme] = t;
+  void addDeclaredLocal(Token t, bool isPrimitive) {
+    declaredVariables[t.lexeme] = TokenType(token: t, isPrimitive: isPrimitive);
   }
 
-  void addDeclaredParameter(Token t) {
-    parameterVariables[t.lexeme] = t;
+  void addDeclaredParameter(Token t, bool isPrimitive) {
+    parameterVariables[t.lexeme] = TokenType(token: t, isPrimitive: isPrimitive);
   }
 
   bool crawlContains(String lexeme) {
@@ -392,7 +438,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
     if (alreadyConsidered.add(node.hashCode)) {
       var parentScope = scopesAtPath[_path]!;
 
-      parentScope.addDeclaredLocal(node.name);
+      parentScope.addDeclaredLocal(node.name, isDartPrimitive(node));
 
       super.visitVariableDeclaration(node);
     }
@@ -417,8 +463,8 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
       final definedLocal = parentScope.isDefinedAsLocal(targetName);
       if (definedParam != null) {
         /* check name */
-        if (!_nameIsMut(definedParam)) {
-          reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutParameter, definedParam);
+        if (!_nameIsMut(definedParam.token) && !definedParam.isPrimitive) {
+          reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutParameter, definedParam.token);
         }
       } else if (definedLocal == null) {
         if (!parentScope.crawlContains(targetName)) {
@@ -443,8 +489,8 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
       final definedLocal = parentScope.isDefinedAsLocal(targetName);
 
       if (definedParam != null) {
-        if (!_nameIsMut(definedParam)) {
-          reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutParameter, definedParam);
+        if (!_nameIsMut(definedParam.token) && !definedParam.isPrimitive) {
+          reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutParameter, definedParam.token);
         }
       } else if (definedLocal == null) {
         if (!parentScope.crawlContains(targetName)) {
@@ -472,7 +518,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
     if (alreadyConsidered.add(node.hashCode)) {
       var parentScope = scopesAtPath[_path]!;
 
-      parentScope.addDeclaredParameter(node.name);
+      parentScope.addDeclaredParameter(node.name, isDartPrimitive(node));
 
       super.visitDeclaredIdentifier(node);
     }
@@ -483,7 +529,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
     if (alreadyConsidered.add(node.hashCode)) {
       var parentScope = scopesAtPath[_path]!;
 
-      parentScope.addDeclaredParameter(node.name);
+      parentScope.addDeclaredParameter(node.name, isDartPrimitive(node));
 
       super.visitDeclaredVariablePattern(node);
     }
@@ -538,7 +584,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
       var parentScope = scopesAtPath[_path]!;
 
       if (node.name != null) {
-        parentScope.addDeclaredParameter(node.name!);
+        parentScope.addDeclaredParameter(node.name!, isDartPrimitive(node));
       }
 
       super.visitSimpleFormalParameter(node);
@@ -559,7 +605,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
     if (alreadyConsidered.add(node.hashCode)) {
       var parentScope = scopesAtPath[_path]!;
 
-      parentScope.addDeclaredParameter(node.name);
+      parentScope.addDeclaredParameter(node.name, isDartPrimitive(node));
 
       super.visitSuperFormalParameter(node);
     }
