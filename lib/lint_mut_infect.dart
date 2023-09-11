@@ -11,6 +11,7 @@ import 'package:custom_lint_builder/custom_lint_builder.dart';
 PluginBase createPlugin() => _ExampleLinter();
 
 const String _mutKeyword = "Mut";
+const String _overrideKeyword = "override";
 
 bool _nameIsMut(Token? t) {
   final tval = t?.lexeme;
@@ -217,10 +218,12 @@ class _MarkMutFix extends DartFix {
 }
 
 // /// Checks if a node is exempt from being required to be named `Mut`
-bool isExemptForMutInfect(AstNode node) {
-  if (node is FunctionDeclaration) {
+bool isExemptForMutInfect(AstNode? node) {
+  if (node == null) {
+    return true;
+  } else if (node is FunctionDeclaration) {
     /* Functions marked @override are exempt */
-    if (node.metadata.any((metadata) => metadata.name.name == "override")) {
+    if (node.metadata.any((metadata) => metadata.name.name == _overrideKeyword)) {
       return true;
     }
     /* Functions named 'main' are exempt */
@@ -237,7 +240,15 @@ bool isExemptForMutInfect(AstNode node) {
     }
   } else if (node is MethodDeclaration) {
     /* Methods marked @override are exempt */
-    if (node.metadata.any((metadata) => metadata.name.name == "override")) {
+    if (node.metadata.isNotEmpty) {
+      print("NODE META NOT EMPTY");
+      for (final elem in node.metadata) {
+        print('elem toString(): $elem');
+        print('elem name.toString(): ${elem.name}');
+        print('elem name.name: ${elem.name.name}');
+      }
+    }
+    if (node.metadata.any((metadata) => metadata.name.name == _overrideKeyword)) {
       return true;
     }
     /* Functions ending in 'Mut' are exempt */
@@ -248,9 +259,13 @@ bool isExemptForMutInfect(AstNode node) {
     if (node.isSetter) {
       return true;
     }
+    /* Operators are exempt */
+    if (node.isOperator) {
+      return true;
+    }
   } else if (node is VariableDeclaration) {
     /* Methods marked @override are exempt */
-    if (node.metadata.any((metadata) => metadata.name.name == "override")) {
+    if (node.metadata.any((metadata) => metadata.name.name == _overrideKeyword)) {
       return true;
     }
     /* Functions ending in 'Mut' are exempt */
@@ -349,6 +364,7 @@ class Scope {
     parameterVariables[t.lexeme] = TokenType(token: t, isPrimitive: isPrimitive);
   }
 
+  /// Returns `true` if a token with the given `lexeme` is present in any of the lexical parent scopes
   bool crawlContains(String lexeme) {
     if (isDefinedAsLocal(lexeme) != null) {
       return true;
@@ -472,7 +488,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
         }
       } else if (definedLocal == null) {
         if (!parentScope.crawlContains(targetName)) {
-          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!) && !isCascadeParentDeclaration(node)) {
+          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!) && !isCascadeExempt(node)) {
             if (alreadyConsideredForMutOutOfScope.add(parentScope.scopeSource.hashCode)) {
               reporter.reportErrorForToken(MutInfectLintCode.outOfScopeMutate, extractNameFromNode(parentScope.scopeSource)!);
             }
@@ -482,23 +498,6 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
       super.visitAssignmentExpression(node);
     }
-  }
-
-  bool isCascadeParentDeclaration(AstNode? node) {
-    AstNode? current = node;
-    while (current != null) {
-      if (current is CascadeExpression && current.target is InstanceCreationExpression) {
-        return true;
-      }
-      if (current is InstanceCreationExpression) {
-        return true;
-      }
-      if (current is VariableDeclaration) {
-        return true;
-      }
-      current = current.parent;
-    }
-    return false;
   }
 
   @override
@@ -519,7 +518,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
         }
       } else if (definedLocal == null) {
         if (!parentScope.crawlContains(targetName)) {
-          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!) && !isCascadeParentDeclaration(node)) {
+          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!) && !isCascadeExempt(node)) {
             if (alreadyConsideredForMutOutOfScope.add(parentScope.scopeSource.hashCode)) {
               reporter.reportErrorForToken(MutInfectLintCode.outOfScopeMutate, extractNameFromNode(parentScope.scopeSource)!);
             }
@@ -585,7 +584,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
     if (alreadyConsideredNode.add(node.hashCode)) {
       var parentScope = scopesAtPath[_path]!;
 
-      if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource)) {
+      if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource)) {
         if (alreadyConsideredForMutInfect.add(parentScope.scopeSource.hashCode)) {
           reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutInvoked, parentScope.scopeName!);
         }
@@ -599,7 +598,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
   void visitFunctionExpressionInvocation(FunctionExpressionInvocation node) {
     if (alreadyConsideredNode.add(node.hashCode)) {
       var parentScope = scopesAtPath[_path]!;
-      if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource)) {
+      if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource)) {
         if (alreadyConsideredForMutInfect.add(parentScope.scopeSource.hashCode)) {
           reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutInvoked, parentScope.scopeName!);
         }
@@ -640,5 +639,22 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
       super.visitSuperFormalParameter(node);
     }
+  }
+
+  bool isCascadeExempt(AstNode? node) {
+    AstNode? current = node;
+    while (current != null) {
+      if (current is CascadeExpression && current.target is InstanceCreationExpression) {
+        return true;
+      }
+      if (current is InstanceCreationExpression) {
+        return true;
+      }
+      if (current is VariableDeclaration) {
+        return true;
+      }
+      current = current.parent;
+    }
+    return false;
   }
 }
