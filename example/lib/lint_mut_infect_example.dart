@@ -1,7 +1,5 @@
 // ignore_for_file: avoid_single_cascade_in_expression_statements, unnecessary_getters_setters, unused_local_variable, unused_element
 
-import 'package:lint_mut_infect/annotation_mut.dart';
-
 int globalScopeVar = 0;
 
 abstract class ForOveridding {
@@ -297,10 +295,4 @@ void dontMarkDefaultPrimitiveString(int i, {String str1 = "abc"}) {
 
 void dontMarkPositionalPrimitiveString(int i, [String str2 = "xyz"]) {
   str2 = "lol";
-}
-
-/* This section shows experiments with the @mut parameter */
-@mut()
-void shouldHaveAnnotation() {
-  globalScopeVar = 0;
 }
