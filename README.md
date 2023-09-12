@@ -70,7 +70,7 @@ Enforces infectious naming conventions on Method and Function declarations.
 Something that invokes a `Mut` element should also be called `Mut`.  
 
 
-![Code demonstrating the `Mut Infect lint`, where a method that should be marked with Mut because it calls a method marked Mut](/docs/readme/lint_mut_infect.png)
+![Code demonstrating the `Mut Infect lint`, where a method that should be marked with Mut because it calls a method marked Mut](/doc/readme/lint_mut_infect.png)
 
 This produces the following message: `'Mut' method invoked but not marked 'Mut'`
 
@@ -95,13 +95,13 @@ Produces: Warning
 
 This lint checks that variables that are modified within a function are declared within that function, or are contained entirely within the lexical scope of the function in question. For instance:
 
-![Code demonstrating the `Mut Out of Scope` lint, where a method is modifying a variable not declared in the lexical scope](/docs/readme/lint_mut_out_of_scope.png)
+![Code demonstrating the `Mut Out of Scope` lint, where a method is modifying a variable not declared in the lexical scope](/doc/readme/lint_mut_out_of_scope.png)
 
 In this example, `globalScopeVar` is not declared within the `outOfScopeModifier` function, but is modified anyway. This produces a warning that the function should be marked with `Mut`.
 
 This lint also understands locally defined functions, and won't cause undue warnings for strictly-local declarations:
 
-![Code demonstrating that `Mut Out of Scope` doesn't apply to variables that have a perfectly captured lexical scope chain](/docs/readme/lint_inner_funtions_not_included.png)
+![Code demonstrating that `Mut Out of Scope` doesn't apply to variables that have a perfectly captured lexical scope chain](/doc/readme/lint_inner_funtions_not_included.png)
 
 In the above image, although `i` is modified by `inner()` , inner will not be marked as requiring Mut, because all declarations are local to the lexical scope of the top-level containing function.  
 
@@ -117,7 +117,7 @@ Produces: Error
 This lint checks that any variable that is passed a parameter and is modified by the function is marked with `Mut`.   
 This lint is stronger than the others because it is very important for a caller to know whether some object of theirs is going to be modified or not.
 
-![Code demonstrating the `Mut Param` lint, where a parameter passed to the function is modified inside the function](/docs/readme/lit_mut_unmarked_param.png)
+![Code demonstrating the `Mut Param` lint, where a parameter passed to the function is modified inside the function](/doc/readme/lint_mut_unmarked_param.png)
 
  were not declared in scope, and marks those methods as requiring the `Mut` marker
 
@@ -128,7 +128,7 @@ Produces: Warning
 
 This lint checks that any functions or methods named `Mut` actually deserve to be marked. This lint can help keep refactors to your codebase from spiraling out of control with Muts everywhere. 
 
-![Code demonstrating the `unnecessary_mut_infect` lint, where a function as been marked Mut that doesnt need it](/docs/readme/lint_unnecessary_mut.png)
+![Code demonstrating the `unnecessary_mut_infect` lint, where a function as been marked Mut that doesnt need it](/doc/readme/lint_unnecessary_mut.png)
 
 ### n.b.
 Because this package isn't always aware of what constitutes mutating functionality or not, you should tell the the analyzer to ignore this lint when you need to.

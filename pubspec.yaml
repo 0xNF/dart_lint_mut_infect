@@ -4,12 +4,12 @@ version: 0.1.0
 repository: https://github.com/0xNF/dart_lint_mut_infect
 
 environment:
-  sdk: ^3.1.0
+  sdk: ">=3.1.0 <4.0.0"
 
 dependencies:
-  analyzer:
-  analyzer_plugin:
-  custom_lint_builder:
+  analyzer: ^6.2.0
+  analyzer_plugin: ^0.11.3
+  custom_lint_builder: ^0.5.2
 
 dev_dependencies:
   lints: ^2.0.0
