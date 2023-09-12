@@ -1,5 +1,5 @@
 name: lint_mut_infect
-description: Custom lint rule that encourages tracking mutated variables throughout the your codebase
+description: Custom lint rule that encourages tracking mutated variables throughout your codebase
 version: 0.1.2
 repository: https://github.com/0xNF/dart_lint_mut_infect
 
