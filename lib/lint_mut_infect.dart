@@ -34,7 +34,17 @@ bool _nameIsMaybeMutable(String? s) {
   if (s == null) {
     return false;
   }
-  const heuristics = <String>['create', 'update', 'delete', 'edit', 'setState', 'add', 'clear', 'remove', 'insert'];
+  const heuristics = <String>[
+    'create',
+    'update',
+    'delete',
+    'edit',
+    'setState',
+    'add',
+    'clear',
+    'remove',
+    'insert',
+  ];
   return heuristics.any((element) => s.startsWith(element));
 }
 
@@ -91,7 +101,10 @@ bool _isDartPrimitive(AstNode node) {
   if (dt == null) {
     return false;
   }
-  if (dt.isDartCoreString | dt.isDartCoreBool || dt.isDartCoreDouble || dt.isDartCoreInt || dt.isDartCoreNum) {
+  if (dt.isDartCoreString | dt.isDartCoreBool ||
+      dt.isDartCoreDouble ||
+      dt.isDartCoreInt ||
+      dt.isDartCoreNum) {
     return true;
   }
   return false;
@@ -120,31 +133,34 @@ class _MutInfectLintCode extends DartLintRule {
 
   static const outOfScopeMutate = LintCode(
     name: 'mut_out_of_scope',
-    problemMessage: 'An non-local variable is mutated but method is not marked `Mut`',
+    problemMessage:
+        'An non-local variable is mutated but method is not marked `Mut`',
     correctionMessage: 'Add `Mut` to end of method name',
     errorSeverity: ErrorSeverity.WARNING,
   );
 
   static const unmarkedMutParameter = LintCode(
     name: 'mut_param',
-    problemMessage: 'Method parameter is mutated by method, but not marked `Mut`',
+    problemMessage:
+        'Method parameter is mutated by method, but not marked `Mut`',
     correctionMessage: 'Add `Mut` to end of parameter name',
     errorSeverity: ErrorSeverity.ERROR,
   );
 
   static const unnecessaryMutInfect = LintCode(
     name: 'unnecessary_mut_infect',
-    problemMessage: 'This method is marked as `Mut` but it doesn\'t contain any mutating functionality',
+    problemMessage:
+        'This method is marked as `Mut` but it doesn\'t contain any mutating functionality',
     correctionMessage: 'Remove `Mut` from the end of this method name',
     errorSeverity: ErrorSeverity.WARNING,
   );
 
-  static const unnecessaryMutParam = LintCode(
-    name: 'unnecessary_mut_param',
-    problemMessage: 'This parameter is marked as `Mut` but isn\'t mutated by anything in the containing scope',
-    correctionMessage: 'Remove `Mut` from the end of this parameter name',
-    errorSeverity: ErrorSeverity.WARNING,
-  );
+  // static const unnecessaryMutParam = LintCode(
+  //   name: 'unnecessary_mut_param',
+  //   problemMessage: 'This parameter is marked as `Mut` but isn\'t mutated by anything in the containing scope',
+  //   correctionMessage: 'Remove `Mut` from the end of this parameter name',
+  //   errorSeverity: ErrorSeverity.WARNING,
+  // );
 
   @override
   void run(
@@ -221,7 +237,8 @@ bool _isExemptForMutInfect(AstNode? node) {
     return true;
   } else if (node is FunctionDeclaration) {
     /* Functions marked @override are exempt */
-    if (node.metadata.any((metadata) => metadata.name.name == _overrideKeyword)) {
+    if (node.metadata
+        .any((metadata) => metadata.name.name == _overrideKeyword)) {
       return true;
     }
     /* Functions named 'main' are exempt */
@@ -238,7 +255,8 @@ bool _isExemptForMutInfect(AstNode? node) {
     }
   } else if (node is MethodDeclaration) {
     /* Methods marked @override are exempt */
-    if (node.metadata.any((metadata) => metadata.name.name == _overrideKeyword)) {
+    if (node.metadata
+        .any((metadata) => metadata.name.name == _overrideKeyword)) {
       return true;
     }
     /* Functions ending in 'Mut' are exempt */
@@ -255,7 +273,8 @@ bool _isExemptForMutInfect(AstNode? node) {
     }
   } else if (node is VariableDeclaration) {
     /* Methods marked @override are exempt */
-    if (node.metadata.any((metadata) => metadata.name.name == _overrideKeyword)) {
+    if (node.metadata
+        .any((metadata) => metadata.name.name == _overrideKeyword)) {
       return true;
     }
     /* Functions ending in 'Mut' are exempt */
@@ -333,7 +352,8 @@ class _LintedToken {
 class _Scope {
   final Token? _scopeName;
   final Map<String, _LintedToken> _declaredVariables = <String, _LintedToken>{};
-  final Map<String, _LintedToken> _parameterVariables = <String, _LintedToken>{};
+  final Map<String, _LintedToken> _parameterVariables =
+      <String, _LintedToken>{};
   final Set<String> _invocations = <String>{};
   final Set<_Scope> _innerScopes = <_Scope>{};
   final AstNode? _scopeSource;
@@ -344,7 +364,10 @@ class _Scope {
 
   bool get isRootScope => _scopeName == null;
 
-  _Scope({required Token? scopeName, required AstNode? scopeSource, required _Scope? parentScope})
+  _Scope(
+      {required Token? scopeName,
+      required AstNode? scopeSource,
+      required _Scope? parentScope})
       : _parentScope = parentScope,
         _scopeSource = scopeSource,
         _scopeName = scopeName;
@@ -364,14 +387,16 @@ class _Scope {
         return true;
       }
     }
-    if (_invocations.any((element) => _nameIsMutStr(element) || _nameIsMaybeMutable(element))) {
+    if (_invocations.any(
+        (element) => _nameIsMutStr(element) || _nameIsMaybeMutable(element))) {
       return true;
     }
     if (_innerScopes.isEmpty) {
       return false;
     } else {
       for (final innerScope in _innerScopes) {
-        if (_nodeIsMarkedMut(innerScope._scopeSource) || innerScope.containsAnyMut()) {
+        if (_nodeIsMarkedMut(innerScope._scopeSource) ||
+            innerScope.containsAnyMut()) {
           return true;
         }
       }
@@ -401,12 +426,14 @@ class _Scope {
 
   /// Adds the given token to this Scope's list of declared variables
   void addDeclaredLocal(Token t, bool isPrimitive) {
-    _declaredVariables[t.lexeme] = _LintedToken(token: t, isPrimitive: isPrimitive);
+    _declaredVariables[t.lexeme] =
+        _LintedToken(token: t, isPrimitive: isPrimitive);
   }
 
   /// Adds the goven token to this Scope's list of declared parameters
   void addDeclaredParameter(Token t, bool isPrimitive) {
-    _parameterVariables[t.lexeme] = _LintedToken(token: t, isPrimitive: isPrimitive);
+    _parameterVariables[t.lexeme] =
+        _LintedToken(token: t, isPrimitive: isPrimitive);
   }
 
   /// Returns `true` if a token with the given `lexeme` is present in any of the lexical parent scopes
@@ -465,14 +492,17 @@ class _LintMutVisitor extends RecursiveAstVisitor<void> {
       _currentPath.add("FunctionDeclaration(${node.name.lexeme})");
 
       /* Scope work */
-      var thisScope = _Scope(scopeName: node.name, scopeSource: node, parentScope: parentScope);
+      var thisScope = _Scope(
+          scopeName: node.name, scopeSource: node, parentScope: parentScope);
       _scopesAtPath[_path] = thisScope;
       parentScope.addInnerScope(thisScope);
 
       super.visitFunctionDeclaration(node);
 
-      if (_nodeIsMarkedMut(thisScope._scopeSource) && !thisScope.containsAnyMut()) {
-        reporter.reportErrorForToken(_MutInfectLintCode.unnecessaryMutInfect, _extractNameFromNode(thisScope._scopeSource)!);
+      if (_nodeIsMarkedMut(thisScope._scopeSource) &&
+          !thisScope.containsAnyMut()) {
+        reporter.reportErrorForToken(_MutInfectLintCode.unnecessaryMutInfect,
+            _extractNameFromNode(thisScope._scopeSource)!);
       }
 
       /* cleanup path */
@@ -489,14 +519,17 @@ class _LintMutVisitor extends RecursiveAstVisitor<void> {
       _currentPath.add("MethodDeclaration(${node.name.lexeme})");
 
       /* Scope work */
-      var thisScope = _Scope(scopeName: node.name, scopeSource: node, parentScope: parentScope);
+      var thisScope = _Scope(
+          scopeName: node.name, scopeSource: node, parentScope: parentScope);
       _scopesAtPath[_path] = thisScope;
       parentScope.addInnerScope(thisScope);
 
       super.visitMethodDeclaration(node);
 
-      if (_nodeIsMarkedMut(thisScope._scopeSource) && !thisScope.containsAnyMut()) {
-        reporter.reportErrorForToken(_MutInfectLintCode.unnecessaryMutInfect, _extractNameFromNode(thisScope._scopeSource)!);
+      if (_nodeIsMarkedMut(thisScope._scopeSource) &&
+          !thisScope.containsAnyMut()) {
+        reporter.reportErrorForToken(_MutInfectLintCode.unnecessaryMutInfect,
+            _extractNameFromNode(thisScope._scopeSource)!);
       }
 
       /* cleanup path */
@@ -534,10 +567,13 @@ class _LintMutVisitor extends RecursiveAstVisitor<void> {
       final definedLocal = parentScope.isDefinedAsLocal(targetName);
       if (definedParam != null) {
         /* check name */
-        if (!_nameIsMut(definedParam.token) && !definedParam.isPrimitive && node.leftHandSide.childEntities.length > 1) {
+        if (!_nameIsMut(definedParam.token) &&
+            !definedParam.isPrimitive &&
+            node.leftHandSide.childEntities.length > 1) {
           if (_alreadyConsideredForMutParam.add(definedParam.token.hashCode)) {
             definedParam.shouldBeMut = true;
-            reporter.reportErrorForToken(_MutInfectLintCode.unmarkedMutParameter, definedParam.token);
+            reporter.reportErrorForToken(
+                _MutInfectLintCode.unmarkedMutParameter, definedParam.token);
           }
         }
         definedParam.shouldBeMut = true;
@@ -545,10 +581,14 @@ class _LintMutVisitor extends RecursiveAstVisitor<void> {
         if (!parentScope.crawlContains(targetName)) {
           final isMarkedMut = _nodeIsMarkedMut(parentScope._scopeSource);
           if (!isMarkedMut) {
-            if (!_isExemptForMutInfect(parentScope._scopeSource) && !isCascadeExempt(node)) {
-              if (_alreadyConsideredForMutOutOfScope.add(parentScope._scopeSource.hashCode)) {
+            if (!_isExemptForMutInfect(parentScope._scopeSource) &&
+                !isCascadeExempt(node)) {
+              if (_alreadyConsideredForMutOutOfScope
+                  .add(parentScope._scopeSource.hashCode)) {
                 parentScope._shouldBeMut = true;
-                reporter.reportErrorForToken(_MutInfectLintCode.outOfScopeMutate, _extractNameFromNode(parentScope._scopeSource)!);
+                reporter.reportErrorForToken(
+                    _MutInfectLintCode.outOfScopeMutate,
+                    _extractNameFromNode(parentScope._scopeSource)!);
               }
             }
           }
@@ -573,19 +613,26 @@ class _LintMutVisitor extends RecursiveAstVisitor<void> {
       final definedLocal = parentScope.isDefinedAsLocal(targetName);
 
       if (definedParam != null) {
-        if (!_nameIsMut(definedParam.token) && !definedParam.isPrimitive && node.childEntities.length > 1) {
+        if (!_nameIsMut(definedParam.token) &&
+            !definedParam.isPrimitive &&
+            node.childEntities.length > 1) {
           if (_alreadyConsideredForMutParam.add(definedParam.token.hashCode)) {
             definedParam.shouldBeMut = true;
-            reporter.reportErrorForToken(_MutInfectLintCode.unmarkedMutParameter, definedParam.token);
+            reporter.reportErrorForToken(
+                _MutInfectLintCode.unmarkedMutParameter, definedParam.token);
           }
         }
       } else if (definedLocal == null) {
         /* check name */
         if (!parentScope.crawlContains(targetName)) {
-          if (!_nodeIsMarkedMut(parentScope._scopeSource) && !_isExemptForMutInfect(parentScope._scopeSource!) && !isCascadeExempt(node)) {
-            if (_alreadyConsideredForMutOutOfScope.add(parentScope._scopeSource.hashCode)) {
+          if (!_nodeIsMarkedMut(parentScope._scopeSource) &&
+              !_isExemptForMutInfect(parentScope._scopeSource!) &&
+              !isCascadeExempt(node)) {
+            if (_alreadyConsideredForMutOutOfScope
+                .add(parentScope._scopeSource.hashCode)) {
               parentScope._shouldBeMut = true;
-              reporter.reportErrorForToken(_MutInfectLintCode.outOfScopeMutate, _extractNameFromNode(parentScope._scopeSource)!);
+              reporter.reportErrorForToken(_MutInfectLintCode.outOfScopeMutate,
+                  _extractNameFromNode(parentScope._scopeSource)!);
             }
           }
         }
@@ -654,10 +701,14 @@ class _LintMutVisitor extends RecursiveAstVisitor<void> {
 
       parentScope.addInvocation(_extractNameFromNode(node)?.lexeme ?? '');
 
-      if (_nodeIsMarkedMut(node) && !_nodeIsMarkedMut(parentScope._scopeSource) && !_isExemptForMutInfect(parentScope._scopeSource)) {
-        if (_alreadyConsideredForMutInfect.add(parentScope._scopeSource.hashCode)) {
+      if (_nodeIsMarkedMut(node) &&
+          !_nodeIsMarkedMut(parentScope._scopeSource) &&
+          !_isExemptForMutInfect(parentScope._scopeSource)) {
+        if (_alreadyConsideredForMutInfect
+            .add(parentScope._scopeSource.hashCode)) {
           parentScope._shouldBeMut = true;
-          reporter.reportErrorForToken(_MutInfectLintCode.unmarkedMutInvoked, parentScope._scopeName!);
+          reporter.reportErrorForToken(
+              _MutInfectLintCode.unmarkedMutInvoked, parentScope._scopeName!);
         }
       }
 
@@ -672,9 +723,13 @@ class _LintMutVisitor extends RecursiveAstVisitor<void> {
 
       parentScope.addInvocation(_extractNameFromNode(node)?.lexeme ?? '');
 
-      if (_nodeIsMarkedMut(node) && !_nodeIsMarkedMut(parentScope._scopeSource) && !_isExemptForMutInfect(parentScope._scopeSource)) {
-        if (_alreadyConsideredForMutInfect.add(parentScope._scopeSource.hashCode)) {
-          reporter.reportErrorForToken(_MutInfectLintCode.unmarkedMutInvoked, parentScope._scopeName!);
+      if (_nodeIsMarkedMut(node) &&
+          !_nodeIsMarkedMut(parentScope._scopeSource) &&
+          !_isExemptForMutInfect(parentScope._scopeSource)) {
+        if (_alreadyConsideredForMutInfect
+            .add(parentScope._scopeSource.hashCode)) {
+          reporter.reportErrorForToken(
+              _MutInfectLintCode.unmarkedMutInvoked, parentScope._scopeName!);
         }
       }
 
@@ -718,7 +773,8 @@ class _LintMutVisitor extends RecursiveAstVisitor<void> {
   bool isCascadeExempt(AstNode? node) {
     AstNode? current = node;
     while (current != null) {
-      if (current is CascadeExpression && current.target is InstanceCreationExpression) {
+      if (current is CascadeExpression &&
+          current.target is InstanceCreationExpression) {
         return true;
       }
       if (current is InstanceCreationExpression) {
