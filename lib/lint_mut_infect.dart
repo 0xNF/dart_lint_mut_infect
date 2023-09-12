@@ -3,16 +3,19 @@ import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
-import 'package:analyzer/diagnostic/diagnostic.dart';
 import 'package:analyzer/error/error.dart';
 import 'package:analyzer/error/listener.dart';
 import 'package:custom_lint_builder/custom_lint_builder.dart';
 
 export 'package:lint_mut_infect/annotation_mut.dart';
 
+/// Creates the Linter object. Not intended to be instantiated directly by a user.
 PluginBase createPlugin() => _MutLinter();
 
+/// "Mut"
 const String _mutKeyword = "Mut";
+
+/// "override"
 const String _overrideKeyword = "override";
 
 bool _nameIsMut(Token? t) {
@@ -38,14 +41,14 @@ bool _nameIsMaybeMutable(String? s) {
 // /// Checks whether ths given node is named with Mut, i.e., `_doStuffMut`
 // ///
 // /// If not marked mut, that is a signal that the parent node should be reported
-bool nodeIsMarkedMut(AstNode? node) {
+bool _nodeIsMarkedMut(AstNode? node) {
   if (node == null) return false;
-  final t = extractNameFromNode(node);
+  final t = _extractNameFromNode(node);
   return _nameIsMut(t);
 }
 
 /// Primitive Types: `[int, double, num, bool, string]`, etc can't be mutated when passed as a Parameter, so ignore functions that mutate ints in their arg list
-bool isDartPrimitive(AstNode node) {
+bool _isDartPrimitive(AstNode node) {
   DartType? dt;
   if (node is Expression) {
     dt = node.staticType;
@@ -94,46 +97,17 @@ bool isDartPrimitive(AstNode node) {
   return false;
 }
 
-class MutDiagnostic extends DiagnosticMessage {
-  @override
-  String get filePath => _filePath;
-  final String _filePath;
-
-  @override
-  int get length => _length;
-  final int _length;
-
-  @override
-  String messageText({required bool includeUrl}) {
-    return "lmao some extra data idk";
-  }
-
-  @override
-  int get offset => _offset;
-  final int _offset;
-
-  @override
-  String? get url => _url;
-  final String? _url;
-
-  MutDiagnostic._({required String filePath, required int length, required int offset, String? url})
-      : _filePath = filePath,
-        _offset = offset,
-        _url = url,
-        _length = length;
-}
-
 /// A plugin class is used to list all the assists/lints defined by a plugin.
 class _MutLinter extends PluginBase {
   /// We list all the custom warnings/infos/errors
   @override
   List<LintRule> getLintRules(CustomLintConfigs configs) => [
-        MutInfectLintCode(),
+        _MutInfectLintCode(),
       ];
 }
 
-class MutInfectLintCode extends DartLintRule {
-  MutInfectLintCode() : super(code: unmarkedMutInvoked);
+class _MutInfectLintCode extends DartLintRule {
+  _MutInfectLintCode() : super(code: unmarkedMutInvoked);
 
   /// Metadata about the warning that will show-up in the IDE.
   /// This is used for `// ignore: code` and enabling/disabling the lint
@@ -178,7 +152,7 @@ class MutInfectLintCode extends DartLintRule {
     ErrorReporter reporter,
     CustomLintContext context,
   ) {
-    final mutViolatorVisitor = RecurseCustom2(reporter: reporter);
+    final mutViolatorVisitor = _LintMutVisitor(reporter: reporter);
 
     context.registry.addMethodDeclaration((methodDecl) {
       methodDecl.accept(mutViolatorVisitor);
@@ -242,7 +216,7 @@ class _MarkMutFix extends DartFix {
 }
 
 // /// Checks if a node is exempt from being required to be named `Mut`
-bool isExemptForMutInfect(AstNode? node) {
+bool _isExemptForMutInfect(AstNode? node) {
   if (node == null) {
     return true;
   } else if (node is FunctionDeclaration) {
@@ -292,7 +266,7 @@ bool isExemptForMutInfect(AstNode? node) {
   return false;
 }
 
-Token? extractNameFromNode(AstNode? node) {
+Token? _extractNameFromNode(AstNode? node) {
   if (node is FunctionDeclaration) {
     return node.name;
   } else if (node is MethodDeclaration) {
@@ -339,59 +313,65 @@ Token? extractNameFromNode(AstNode? node) {
   return null;
 }
 
-class TokenType {
+class _LintedToken {
+  /// Underlying AST Token this token represents
   final Token token;
+
+  /// Whether this token is a Dart Primitive type
   final bool isPrimitive;
 
+  /// Whether this token is suffixed with `Mut`
   bool get isNameMut => _nameIsMut(token);
 
   /// Whether this token should be marked as mut, regardless of whether its named Mut or not
-  bool shouldBeMut;
+  bool shouldBeMut = false;
 
-  TokenType({required this.token, required this.isPrimitive, this.shouldBeMut = false});
+  _LintedToken({required this.token, required this.isPrimitive});
 }
 
 /// For keeping track of local variables so we don't incorrectly mark inner functions as requiring Mut
-class Scope {
-  final Token? scopeName;
-  final Map<String, TokenType> declaredVariables = <String, TokenType>{};
-  final Map<String, TokenType> parameterVariables = <String, TokenType>{};
-  final Set<String> invocations = <String>{};
-  final Set<Scope> innerScopes = <Scope>{};
-  final AstNode? scopeSource;
+class _Scope {
+  final Token? _scopeName;
+  final Map<String, _LintedToken> _declaredVariables = <String, _LintedToken>{};
+  final Map<String, _LintedToken> _parameterVariables = <String, _LintedToken>{};
+  final Set<String> _invocations = <String>{};
+  final Set<_Scope> _innerScopes = <_Scope>{};
+  final AstNode? _scopeSource;
 
-  bool get isNameMut => _nameIsMut(scopeName);
-  bool shouldBeMut = false;
+  bool _shouldBeMut = false;
 
-  final Scope? parentScope;
+  final _Scope? _parentScope;
 
-  bool get isRootScope => scopeName == null;
+  bool get isRootScope => _scopeName == null;
 
-  Scope({required this.scopeName, required this.scopeSource, required this.parentScope});
+  _Scope({required Token? scopeName, required AstNode? scopeSource, required _Scope? parentScope})
+      : _parentScope = parentScope,
+        _scopeSource = scopeSource,
+        _scopeName = scopeName;
 
   /// Whether this scope contains any correct Mut entries
   bool containsAnyMut() {
-    if (shouldBeMut) {
+    if (_shouldBeMut) {
       return true;
     }
-    for (final variable in declaredVariables.entries) {
+    for (final variable in _declaredVariables.entries) {
       if (variable.value.shouldBeMut) {
         return true;
       }
     }
-    for (final param in parameterVariables.entries) {
+    for (final param in _parameterVariables.entries) {
       if (param.value.shouldBeMut) {
         return true;
       }
     }
-    if (invocations.any((element) => _nameIsMutStr(element) || _nameIsMaybeMutable(element))) {
+    if (_invocations.any((element) => _nameIsMutStr(element) || _nameIsMaybeMutable(element))) {
       return true;
     }
-    if (innerScopes.isEmpty) {
+    if (_innerScopes.isEmpty) {
       return false;
     } else {
-      for (final innerScope in innerScopes) {
-        if (nodeIsMarkedMut(innerScope.scopeSource) || innerScope.containsAnyMut()) {
+      for (final innerScope in _innerScopes) {
+        if (_nodeIsMarkedMut(innerScope._scopeSource) || innerScope.containsAnyMut()) {
           return true;
         }
       }
@@ -399,36 +379,42 @@ class Scope {
     return false;
   }
 
-  TokenType? isDefinedAsParameter(String lexeme) {
-    return parameterVariables[lexeme];
+  /// Returns a non-null [_LintedToken] if the given lexeme exists as a passed-in Parameter to this Scope
+  _LintedToken? isDefinedAsParameter(String lexeme) {
+    return _parameterVariables[lexeme];
   }
 
-  TokenType? isDefinedAsLocal(String lexeme) {
-    return declaredVariables[lexeme];
+  /// Returns a non-null [_LintedToken] if the given lexeme exists as a declared Variable in this Scope
+  _LintedToken? isDefinedAsLocal(String lexeme) {
+    return _declaredVariables[lexeme];
   }
 
+  /// Adds the given lexeme as an invoked element of this Scope
   void addInvocation(String s) {
-    invocations.add(s);
+    _invocations.add(s);
   }
 
-  void addInnerScope(Scope s) {
-    innerScopes.add(s);
+  /// Adds the given Scope as a child Scope
+  void addInnerScope(_Scope s) {
+    _innerScopes.add(s);
   }
 
+  /// Adds the given token to this Scope's list of declared variables
   void addDeclaredLocal(Token t, bool isPrimitive) {
-    declaredVariables[t.lexeme] = TokenType(token: t, isPrimitive: isPrimitive);
+    _declaredVariables[t.lexeme] = _LintedToken(token: t, isPrimitive: isPrimitive);
   }
 
+  /// Adds the goven token to this Scope's list of declared parameters
   void addDeclaredParameter(Token t, bool isPrimitive) {
-    parameterVariables[t.lexeme] = TokenType(token: t, isPrimitive: isPrimitive);
+    _parameterVariables[t.lexeme] = _LintedToken(token: t, isPrimitive: isPrimitive);
   }
 
   /// Returns `true` if a token with the given `lexeme` is present in any of the lexical parent scopes
   bool crawlContains(String lexeme) {
     if (isDefinedAsLocal(lexeme) != null) {
       return true;
-    } else if (parentScope != null && !parentScope!.isRootScope) {
-      return parentScope!.crawlContains(lexeme);
+    } else if (_parentScope != null && !_parentScope!.isRootScope) {
+      return _parentScope!.crawlContains(lexeme);
     }
     return false;
   }
@@ -438,92 +424,92 @@ class Scope {
     if (node == null) {
       return false;
     }
-    if (isRootScope || (parentScope?.isRootScope ?? false)) {
+    if (isRootScope || (_parentScope?.isRootScope ?? false)) {
       return false;
     }
     return true;
   }
 
   @override
-  int get hashCode => scopeName.hashCode;
+  int get hashCode => _scopeName.hashCode;
 
   @override
   bool operator ==(Object other) {
-    return other is Scope && other.scopeName == scopeName;
+    return other is _Scope && other._scopeName == _scopeName;
   }
 }
 
-class RecurseCustom2 extends RecursiveAstVisitor<void> {
+class _LintMutVisitor extends RecursiveAstVisitor<void> {
   final ErrorReporter reporter;
 
-  final List<String> currentPath = [];
-  String get _path => currentPath.join('/');
+  final List<String> _currentPath = [];
+  String get _path => _currentPath.join('/');
 
-  final Map<String, Scope> scopesAtPath = <String, Scope>{
-    "": Scope(scopeName: null, scopeSource: null, parentScope: null),
+  final Map<String, _Scope> _scopesAtPath = <String, _Scope>{
+    "": _Scope(scopeName: null, scopeSource: null, parentScope: null),
   };
 
-  final Set<int> alreadyConsideredNode = <int>{};
-  final Set<int> alreadyConsideredForMutParam = <int>{};
-  final Set<int> alreadyConsideredForMutInfect = <int>{};
-  final Set<int> alreadyConsideredForMutOutOfScope = <int>{};
+  final Set<int> _alreadyConsideredNode = <int>{};
+  final Set<int> _alreadyConsideredForMutParam = <int>{};
+  final Set<int> _alreadyConsideredForMutInfect = <int>{};
+  final Set<int> _alreadyConsideredForMutOutOfScope = <int>{};
 
-  RecurseCustom2({required this.reporter});
+  _LintMutVisitor({required this.reporter});
 
   @override
   void visitFunctionDeclaration(FunctionDeclaration node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+    if (_alreadyConsideredNode.add(node.hashCode)) {
+      var parentScope = _scopesAtPath[_path]!;
 
       /* push path */
-      currentPath.add("FunctionDeclaration(${node.name.lexeme})");
+      _currentPath.add("FunctionDeclaration(${node.name.lexeme})");
 
       /* Scope work */
-      var thisScope = Scope(scopeName: node.name, scopeSource: node, parentScope: parentScope);
-      scopesAtPath[_path] = thisScope;
+      var thisScope = _Scope(scopeName: node.name, scopeSource: node, parentScope: parentScope);
+      _scopesAtPath[_path] = thisScope;
       parentScope.addInnerScope(thisScope);
 
       super.visitFunctionDeclaration(node);
 
-      if (nodeIsMarkedMut(thisScope.scopeSource) && !thisScope.containsAnyMut()) {
-        reporter.reportErrorForToken(MutInfectLintCode.unnecessaryMutInfect, extractNameFromNode(thisScope.scopeSource)!);
+      if (_nodeIsMarkedMut(thisScope._scopeSource) && !thisScope.containsAnyMut()) {
+        reporter.reportErrorForToken(_MutInfectLintCode.unnecessaryMutInfect, _extractNameFromNode(thisScope._scopeSource)!);
       }
 
       /* cleanup path */
-      currentPath.removeLast();
+      _currentPath.removeLast();
     }
   }
 
   @override
   void visitMethodDeclaration(MethodDeclaration node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+    if (_alreadyConsideredNode.add(node.hashCode)) {
+      var parentScope = _scopesAtPath[_path]!;
 
       /* push path */
-      currentPath.add("MethodDeclaration(${node.name.lexeme})");
+      _currentPath.add("MethodDeclaration(${node.name.lexeme})");
 
       /* Scope work */
-      var thisScope = Scope(scopeName: node.name, scopeSource: node, parentScope: parentScope);
-      scopesAtPath[_path] = thisScope;
+      var thisScope = _Scope(scopeName: node.name, scopeSource: node, parentScope: parentScope);
+      _scopesAtPath[_path] = thisScope;
       parentScope.addInnerScope(thisScope);
 
       super.visitMethodDeclaration(node);
 
-      if (nodeIsMarkedMut(thisScope.scopeSource) && !thisScope.containsAnyMut()) {
-        reporter.reportErrorForToken(MutInfectLintCode.unnecessaryMutInfect, extractNameFromNode(thisScope.scopeSource)!);
+      if (_nodeIsMarkedMut(thisScope._scopeSource) && !thisScope.containsAnyMut()) {
+        reporter.reportErrorForToken(_MutInfectLintCode.unnecessaryMutInfect, _extractNameFromNode(thisScope._scopeSource)!);
       }
 
       /* cleanup path */
-      currentPath.removeLast();
+      _currentPath.removeLast();
     }
   }
 
   @override
   void visitVariableDeclaration(VariableDeclaration node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+    if (_alreadyConsideredNode.add(node.hashCode)) {
+      var parentScope = _scopesAtPath[_path]!;
 
-      parentScope.addDeclaredLocal(node.name, isDartPrimitive(node));
+      parentScope.addDeclaredLocal(node.name, _isDartPrimitive(node));
 
       super.visitVariableDeclaration(node);
     }
@@ -531,7 +517,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitAssignedVariablePattern(AssignedVariablePattern node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
+    if (_alreadyConsideredNode.add(node.hashCode)) {
       // var parentScope = scopesAtPath[_path]!;
 
       super.visitAssignedVariablePattern(node);
@@ -540,34 +526,34 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitAssignmentExpression(AssignmentExpression node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
+    if (_alreadyConsideredNode.add(node.hashCode)) {
       final targetName = node.leftHandSide.beginToken.lexeme;
 
-      var parentScope = scopesAtPath[_path]!;
+      var parentScope = _scopesAtPath[_path]!;
       final definedParam = parentScope.isDefinedAsParameter(targetName);
       final definedLocal = parentScope.isDefinedAsLocal(targetName);
       if (definedParam != null) {
         /* check name */
         if (!_nameIsMut(definedParam.token) && !definedParam.isPrimitive && node.leftHandSide.childEntities.length > 1) {
-          if (alreadyConsideredForMutParam.add(definedParam.token.hashCode)) {
+          if (_alreadyConsideredForMutParam.add(definedParam.token.hashCode)) {
             definedParam.shouldBeMut = true;
-            reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutParameter, definedParam.token);
+            reporter.reportErrorForToken(_MutInfectLintCode.unmarkedMutParameter, definedParam.token);
           }
         }
         definedParam.shouldBeMut = true;
       } else if (definedLocal == null) {
         if (!parentScope.crawlContains(targetName)) {
-          final isMarkedMut = nodeIsMarkedMut(parentScope.scopeSource);
+          final isMarkedMut = _nodeIsMarkedMut(parentScope._scopeSource);
           if (!isMarkedMut) {
-            if (!isExemptForMutInfect(parentScope.scopeSource) && !isCascadeExempt(node)) {
-              if (alreadyConsideredForMutOutOfScope.add(parentScope.scopeSource.hashCode)) {
-                parentScope.shouldBeMut = true;
-                reporter.reportErrorForToken(MutInfectLintCode.outOfScopeMutate, extractNameFromNode(parentScope.scopeSource)!);
+            if (!_isExemptForMutInfect(parentScope._scopeSource) && !isCascadeExempt(node)) {
+              if (_alreadyConsideredForMutOutOfScope.add(parentScope._scopeSource.hashCode)) {
+                parentScope._shouldBeMut = true;
+                reporter.reportErrorForToken(_MutInfectLintCode.outOfScopeMutate, _extractNameFromNode(parentScope._scopeSource)!);
               }
             }
           }
         }
-        parentScope.shouldBeMut = true;
+        parentScope._shouldBeMut = true;
       } else if (_nameIsMut(definedLocal.token)) {
         definedLocal.shouldBeMut = true;
       }
@@ -578,32 +564,32 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitCascadeExpression(CascadeExpression node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
+    if (_alreadyConsideredNode.add(node.hashCode)) {
       final targetName = node.target.beginToken.lexeme;
 
-      var parentScope = scopesAtPath[_path]!;
+      var parentScope = _scopesAtPath[_path]!;
 
       final definedParam = parentScope.isDefinedAsParameter(targetName);
       final definedLocal = parentScope.isDefinedAsLocal(targetName);
 
       if (definedParam != null) {
         if (!_nameIsMut(definedParam.token) && !definedParam.isPrimitive && node.childEntities.length > 1) {
-          if (alreadyConsideredForMutParam.add(definedParam.token.hashCode)) {
+          if (_alreadyConsideredForMutParam.add(definedParam.token.hashCode)) {
             definedParam.shouldBeMut = true;
-            reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutParameter, definedParam.token);
+            reporter.reportErrorForToken(_MutInfectLintCode.unmarkedMutParameter, definedParam.token);
           }
         }
       } else if (definedLocal == null) {
         /* check name */
         if (!parentScope.crawlContains(targetName)) {
-          if (!nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource!) && !isCascadeExempt(node)) {
-            if (alreadyConsideredForMutOutOfScope.add(parentScope.scopeSource.hashCode)) {
-              parentScope.shouldBeMut = true;
-              reporter.reportErrorForToken(MutInfectLintCode.outOfScopeMutate, extractNameFromNode(parentScope.scopeSource)!);
+          if (!_nodeIsMarkedMut(parentScope._scopeSource) && !_isExemptForMutInfect(parentScope._scopeSource!) && !isCascadeExempt(node)) {
+            if (_alreadyConsideredForMutOutOfScope.add(parentScope._scopeSource.hashCode)) {
+              parentScope._shouldBeMut = true;
+              reporter.reportErrorForToken(_MutInfectLintCode.outOfScopeMutate, _extractNameFromNode(parentScope._scopeSource)!);
             }
           }
         }
-        parentScope.shouldBeMut = true;
+        parentScope._shouldBeMut = true;
       } else if (_nameIsMut(definedLocal.token)) {
         definedLocal.shouldBeMut = true;
       }
@@ -613,7 +599,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitPatternAssignment(PatternAssignment node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
+    if (_alreadyConsideredNode.add(node.hashCode)) {
       // var parentScope = scopesAtPath[_path]!;
 
       super.visitPatternAssignment(node);
@@ -623,10 +609,10 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
   @override
   void visitDeclaredIdentifier(DeclaredIdentifier node) {
     print(node);
-    if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+    if (_alreadyConsideredNode.add(node.hashCode)) {
+      var parentScope = _scopesAtPath[_path]!;
 
-      parentScope.addDeclaredParameter(node.name, isDartPrimitive(node));
+      parentScope.addDeclaredParameter(node.name, _isDartPrimitive(node));
 
       super.visitDeclaredIdentifier(node);
     }
@@ -634,10 +620,10 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitDeclaredVariablePattern(DeclaredVariablePattern node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+    if (_alreadyConsideredNode.add(node.hashCode)) {
+      var parentScope = _scopesAtPath[_path]!;
 
-      parentScope.addDeclaredParameter(node.name, isDartPrimitive(node));
+      parentScope.addDeclaredParameter(node.name, _isDartPrimitive(node));
 
       super.visitDeclaredVariablePattern(node);
     }
@@ -645,7 +631,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitFunctionExpression(FunctionExpression node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
+    if (_alreadyConsideredNode.add(node.hashCode)) {
       // var parentScope = scopesAtPath[_path]!;
 
       super.visitFunctionExpression(node);
@@ -654,7 +640,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitFunctionTypeAlias(FunctionTypeAlias node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
+    if (_alreadyConsideredNode.add(node.hashCode)) {
       // var parentScope = scopesAtPath[_path]!;
 
       super.visitFunctionTypeAlias(node);
@@ -663,15 +649,15 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitMethodInvocation(MethodInvocation node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+    if (_alreadyConsideredNode.add(node.hashCode)) {
+      var parentScope = _scopesAtPath[_path]!;
 
-      parentScope.addInvocation(extractNameFromNode(node)?.lexeme ?? '');
+      parentScope.addInvocation(_extractNameFromNode(node)?.lexeme ?? '');
 
-      if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource)) {
-        if (alreadyConsideredForMutInfect.add(parentScope.scopeSource.hashCode)) {
-          parentScope.shouldBeMut = true;
-          reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutInvoked, parentScope.scopeName!);
+      if (_nodeIsMarkedMut(node) && !_nodeIsMarkedMut(parentScope._scopeSource) && !_isExemptForMutInfect(parentScope._scopeSource)) {
+        if (_alreadyConsideredForMutInfect.add(parentScope._scopeSource.hashCode)) {
+          parentScope._shouldBeMut = true;
+          reporter.reportErrorForToken(_MutInfectLintCode.unmarkedMutInvoked, parentScope._scopeName!);
         }
       }
 
@@ -681,14 +667,14 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitFunctionExpressionInvocation(FunctionExpressionInvocation node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+    if (_alreadyConsideredNode.add(node.hashCode)) {
+      var parentScope = _scopesAtPath[_path]!;
 
-      parentScope.addInvocation(extractNameFromNode(node)?.lexeme ?? '');
+      parentScope.addInvocation(_extractNameFromNode(node)?.lexeme ?? '');
 
-      if (nodeIsMarkedMut(node) && !nodeIsMarkedMut(parentScope.scopeSource) && !isExemptForMutInfect(parentScope.scopeSource)) {
-        if (alreadyConsideredForMutInfect.add(parentScope.scopeSource.hashCode)) {
-          reporter.reportErrorForToken(MutInfectLintCode.unmarkedMutInvoked, parentScope.scopeName!);
+      if (_nodeIsMarkedMut(node) && !_nodeIsMarkedMut(parentScope._scopeSource) && !_isExemptForMutInfect(parentScope._scopeSource)) {
+        if (_alreadyConsideredForMutInfect.add(parentScope._scopeSource.hashCode)) {
+          reporter.reportErrorForToken(_MutInfectLintCode.unmarkedMutInvoked, parentScope._scopeName!);
         }
       }
 
@@ -698,11 +684,11 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitSimpleFormalParameter(SimpleFormalParameter node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+    if (_alreadyConsideredNode.add(node.hashCode)) {
+      var parentScope = _scopesAtPath[_path]!;
 
       if (node.name != null) {
-        parentScope.addDeclaredParameter(node.name!, isDartPrimitive(node));
+        parentScope.addDeclaredParameter(node.name!, _isDartPrimitive(node));
       }
 
       super.visitSimpleFormalParameter(node);
@@ -711,7 +697,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitSimpleIdentifier(SimpleIdentifier node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
+    if (_alreadyConsideredNode.add(node.hashCode)) {
       // var parentScope = scopesAtPath[_path]!;
 
       super.visitSimpleIdentifier(node);
@@ -720,10 +706,10 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
 
   @override
   void visitSuperFormalParameter(SuperFormalParameter node) {
-    if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+    if (_alreadyConsideredNode.add(node.hashCode)) {
+      var parentScope = _scopesAtPath[_path]!;
 
-      parentScope.addDeclaredParameter(node.name, isDartPrimitive(node));
+      parentScope.addDeclaredParameter(node.name, _isDartPrimitive(node));
 
       super.visitSuperFormalParameter(node);
     }
