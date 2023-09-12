@@ -616,7 +616,6 @@ class _LintMutVisitor extends RecursiveAstVisitor<void> {
 
   @override
   void visitDeclaredIdentifier(DeclaredIdentifier node) {
-    print(node);
     if (_alreadyConsideredNode.add(node.hashCode)) {
       var parentScope = _scopesAtPath[_path]!;
 
