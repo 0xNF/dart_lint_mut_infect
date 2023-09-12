@@ -1,17 +1,14 @@
 name: lint_mut_infect
-description: A sample command-line application.
-version: 1.0.0
-# repository: https://github.com/my_org/my_repo
+description: Custom lint rule that encourages tracking mutated variables throughout the your codebase
+version: 0.1.0
+repository: https://github.com/0xNF/dart_lint_mut_infect
 
 environment:
   sdk: ^3.1.0
 
-# Add regular dependencies here.
 dependencies:
-  # we will use analyzer for inspecting Dart files
   analyzer:
   analyzer_plugin:
-  # custom_lint_builder will give us tools for writing lints
   custom_lint_builder:
 
 dev_dependencies:

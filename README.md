@@ -1,14 +1,37 @@
-# Overview
-This linter enforces certain naming conventions when dealing with methods that mutate variables
+A Dart linter enforcing certain naming conventions when dealing with methods that mutate variables.
 
 There are 3 lints included in this package:
 
-1. [mut_infect](#mut_infect)
+1. [mut_infect](#mut_infect)  
+    ```dart
+    void callAMut() {
+        /* Calling a `mut` method should mark the caller as `Mut` */
+        callBMut();
+    }
+    ```
 1. [mut_out_of_scope](#mut_out_of_scope)
+    ```dart
+    void assignGlobalMut() {
+        /* Assigning to a variable not owned by this scope should mark the caller as `Mut` */
+        globalVar = 3;
+    }
+    ```
 1. [mut_param](#mut_param)
+    ```dart
+    void changeIncomingParamterValue(SomeClass cMut) {
+        /* Changing the parameter should mark the parameter as `Mut` */
+        cMut.innerField = "hi";
+    }
+    ```
+1. [unnecessary_mut_infect](#unnecessary_mut_infect)
+    ```dart
+    void funcDoesNotMut() {
+        /* this function should not be marked with `Mut` */
+    }
+    ```
 
 
-## Adding to Your Project
+## Getting Started
 Taken from [custom_lint](https://pub.dev/packages/custom_lint#enablingdisabling-and-configuring-lint):
 * The application must contain an `analysis_options.yaml` with the following
 ```yaml
@@ -38,6 +61,7 @@ lint_mut_infect:
 
 All rules are enabled by default.
 
+# Lints
 ## mut_infect
 
 Produces: Warning
@@ -63,7 +87,7 @@ This way you can establish a chain of all functions that mutate variables.
 ### Exemptions
 This lint is not applied when the element is:
 1. Marked with `@override`
-1. A function named `main`
+1. functions named `main`
 1. A `setter`
 
 ## mut_out_of_scope
@@ -81,11 +105,10 @@ This lint also understands locally defined functions, and won't cause undue warn
 
 In the above image, although `i` is modified by `inner()` , inner will not be marked as requiring Mut, because all declarations are local to the lexical scope of the top-level containing function.  
 
-
 ### Exemptions
 This lint is not applied when the element is:
 1. Marked with `@override`
-1. A function named `main`
+1. functions named `main`
 1. A `setter`
 
 ## mut_param
@@ -98,14 +121,40 @@ This lint is stronger than the others because it is very important for a caller 
 
  were not declared in scope, and marks those methods as requiring the `Mut` marker
 
+
+
+## unnecessary_mut_infect
+Produces: Warning
+
+This lint checks that any functions or methods named `Mut` actually deserve to be marked. This lint can help keep refactors to your codebase from spiraling out of control with Muts everywhere. 
+
+![Code demonstrating the `unnecessary_mut_infect` lint, where a function as been marked Mut that doesnt need it](/docs/readme/lint_unnecessary_mut.png)
+
+### n.b.
+Because this package isn't always aware of what constitutes mutating functionality or not, you should tell the the analyzer to ignore this lint when you need to.
+
+For example:
+
+```dart
+// ignore: unnecessary_mut_infect
+void reallyIsMut() {
+    someCallYouCantRenameButIsDefinitelyAMutatingCall();
+}
+```
+
+
 # Exemptions
 
 Any function or method marked `@override`, or any function named `main` will not be flagged.  
 This means you wont be overloaded with warnings when dealing with names you don't control.
 
+# Limitations
+This package doesn't integrate with `dart fix`, as we can't reliably get all symbol references for renaming. You are encouraged to use `F2` rename functionality on your own to add or remove `Mut` as appropriate. 
+
+
 
 # Known Bugs
-- #1
+[#1](https://github.com/0xNF/dart_lint_mut_infect/issues/1)
 Some functions with inner scope `Mut` calls mutating a variable owned entirely by the calling scope still require their parent scope to be marked as `Mut`, even though they're mutating fully-owned local variables.
 
 # Debugging
@@ -115,4 +164,8 @@ follow the steps at https://pub.dev/packages/custom_lint
 
 1. Add `custom_lint` and `dart_lint_infect_mut` to Dev Dependencies of target project
 2. Run `custom_lint --watch`
-3. [Optional] add the dart_lint repo to the Workspace and set breakpoints within
+3. [Optional] add the dart_lint repo to the Workspace and set breakpoints within  
+
+
+# Contributing to this plugin
+This plugin uses the  [custom_lint](https://pub.dev/packages/custom_lint) package. To help with the underlying functionality, consider helping out that repo. To contribute to this repo specifically, visit https://github.com/0xNF/dart_lint_mut_infect

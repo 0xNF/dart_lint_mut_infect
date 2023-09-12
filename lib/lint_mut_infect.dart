@@ -8,6 +8,8 @@ import 'package:analyzer/error/error.dart';
 import 'package:analyzer/error/listener.dart';
 import 'package:custom_lint_builder/custom_lint_builder.dart';
 
+export 'package:lint_mut_infect/annotation_mut.dart';
+
 PluginBase createPlugin() => _MutLinter();
 
 const String _mutKeyword = "Mut";
