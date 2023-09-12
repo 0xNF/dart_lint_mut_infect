@@ -1,6 +1,6 @@
 A Dart linter enforcing certain naming conventions when dealing with methods that mutate variables.
 
-There are 3 lints included in this package:
+There are 4 lints included in this package:
 
 1. [mut_infect](#mut_infect)  
     ```dart
@@ -18,9 +18,9 @@ There are 3 lints included in this package:
     ```
 1. [mut_param](#mut_param)
     ```dart
-    void changeIncomingParamterValue(SomeClass cMut) {
-        /* Changing the parameter should mark the parameter as `Mut` */
-        cMut.innerField = "hi";
+    void changeIncomingParamterValue(AnObject aoMut) {
+        /* Changing the parameter's properties should mark the parameter as `Mut` */
+        aoMut.innerField = "hi";
     }
     ```
 1. [unnecessary_mut_infect](#unnecessary_mut_infect)
@@ -119,9 +119,23 @@ This lint is stronger than the others because it is very important for a caller 
 
 ![Code demonstrating the `Mut Param` lint, where a parameter passed to the function is modified inside the function](https://github.com/0xNF/dart_lint_mut_infect/blob/master/doc/readme/lint_mut_unmarked_param.png?raw=true)
 
- were not declared in scope, and marks those methods as requiring the `Mut` marker
 
 
+### Exemptions
+
+* Parameters with Dart primitive types are exempt because they are passed-by-value. These include:
+    - bool
+    - int
+    - double
+    - num
+    - String
+
+* Simply reassigning the variable is exempt as well:
+    ```dart
+    void reassignment(AnObject ao) {
+        ao = AnObject();
+    }
+    ```
 
 ## unnecessary_mut_infect
 Produces: Warning

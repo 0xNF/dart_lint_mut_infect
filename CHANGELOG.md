@@ -1,3 +1,7 @@
+## 0.1.3
+
+- Fixed typos in README
+
 ## 0.1.2
 
 - Removed unused elements
