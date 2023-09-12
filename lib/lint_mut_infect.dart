@@ -532,7 +532,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
   @override
   void visitAssignedVariablePattern(AssignedVariablePattern node) {
     if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+      // var parentScope = scopesAtPath[_path]!;
 
       super.visitAssignedVariablePattern(node);
     }
@@ -614,7 +614,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
   @override
   void visitPatternAssignment(PatternAssignment node) {
     if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+      // var parentScope = scopesAtPath[_path]!;
 
       super.visitPatternAssignment(node);
     }
@@ -646,7 +646,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
   @override
   void visitFunctionExpression(FunctionExpression node) {
     if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+      // var parentScope = scopesAtPath[_path]!;
 
       super.visitFunctionExpression(node);
     }
@@ -655,7 +655,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
   @override
   void visitFunctionTypeAlias(FunctionTypeAlias node) {
     if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+      // var parentScope = scopesAtPath[_path]!;
 
       super.visitFunctionTypeAlias(node);
     }
@@ -712,7 +712,7 @@ class RecurseCustom2 extends RecursiveAstVisitor<void> {
   @override
   void visitSimpleIdentifier(SimpleIdentifier node) {
     if (alreadyConsideredNode.add(node.hashCode)) {
-      var parentScope = scopesAtPath[_path]!;
+      // var parentScope = scopesAtPath[_path]!;
 
       super.visitSimpleIdentifier(node);
     }
